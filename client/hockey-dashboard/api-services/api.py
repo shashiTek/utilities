@@ -375,8 +375,6 @@ def get_team_filters():
             "leagues": []
         }), 500
 
-
-
 @app.route('/api/teams', methods=['GET'])
 def get_teams_roster():
     try:
@@ -385,92 +383,137 @@ def get_teams_roster():
         coach_search = request.args.get('coach', '').strip()
         selected_league = request.args.get('league', '').strip()
 
-        teams_collection = db.teams
+        # 1. Base Query Construction
         query = {}
-        if selected_team:
-            query['name'] = selected_team
-        if selected_league:
-            query['memberOf.name'] = selected_league 
+        if selected_team and selected_team.lower() != 'all teams':
+            query['name'] = re.compile(rf".*{re.escape(selected_team)}.*", re.IGNORECASE)
+        if selected_league and selected_league.lower() != 'all leagues':
+            query['memberOf.name'] = re.compile(rf".*{re.escape(selected_league)}.*", re.IGNORECASE)
 
-        cursor = teams_collection.find(query)
+        # Fetch matching teams immediately to memory to collect player IDs
+        matching_teams = list(db.teams.find(query))
+        
+        # 2. Extract All Player IDs for Batch Fetching
+        all_player_ids = set()
+        player_id_to_url_map = {}  # Helps match int vs str types later
+        
+        for record in matching_teams:
+            for a in record.get('athlete', []):
+                if isinstance(a, dict) and 'url' in a:
+                    match = re.search(r'/player/(\d+)', str(a['url']))
+                    if match:
+                        pid = match.group(1)
+                        all_player_ids.add(pid)
+                        all_player_ids.add(int(pid)) # Add both formats for MongoDB query
+
+        # 3. BULK FETCH STATS (Eliminates the N+1 loop)
+        stats_map = {}
+        if all_player_ids:
+            bulk_stats = db.stats.find({
+                "player_id": {"$in": list(all_player_ids)},
+                "stat_type": "REGULAR_SEASON"
+            })
+            # Map by both string and int keys to ensure flawless matching
+            for stat in bulk_stats:
+                pid = stat.get('player_id')
+                stats_map[str(pid)] = stat
+                if isinstance(pid, (int, float)):
+                    stats_map[int(pid)] = stat
+
+        # Helpers
+        SV_KEYS = ('GVSV%', 'SV%', 'sv%')
+        def safe_int(val):
+            if val is None or str(val).strip() == '': return 0
+            try: return int(float(str(val).replace(',', '').strip()))
+            except (ValueError, TypeError): return 0
+
         results = []
-
-        for record in cursor:
+        
+        # 4. Process Teams Rapidly with In-Memory Mapping
+        for record in matching_teams:
             raw_athletes = record.get('athlete', [])
             raw_coaches = record.get('coach', [])
             team_year = record.get('year', 2026)
 
             coaches = []
             for c in raw_coaches:
-                if isinstance(c, dict) and 'name' in c:
-                    coaches.append(str(c['name']).strip())
-                elif isinstance(c, str) and c.strip():
-                    coaches.append(c.strip())
-
+                c_name = str(c.get('name', '')).strip() if isinstance(c, dict) else str(c).strip()
+                if c_name: coaches.append(c_name)
+            
             if coach_search:
                 coaches = [c for c in coaches if coach_search.lower() in c.lower()]
                 if not coaches: continue
 
             athletes_payload = []
-            goalie_count = 0
-            skater_count = 0
-            total_games = 0
-            total_goals = 0
-            total_assists = 0
-            scored_records_count = 0
+            goalie_count, skater_count = 0, 0
+            total_games, total_goals, total_assists, scored_records_count = 0, 0, 0, 0
+            
+            top_scorer_name, top_assister_name, top_goalie_name = "—", "—", "—"
+            max_points, max_assists, max_sv_pct = -1, -1, -1.0
 
             for a in raw_athletes:
                 if not a: continue
+                name = str(a.get('name', '')).strip() if isinstance(a, dict) else str(a).strip()
                 
-                name = ""
-                player_id = ""
-                
-                if isinstance(a, dict):
-                    name = str(a.get('name', '')).strip()
-                    url = str(a.get('url', ''))
-                    match = re.search(r'/player/(\d+)', url)
-                    if match:
-                        player_id = match.group(1)
-                else:
-                    name = str(a).strip()
-
-                # Fixed: Corrected indentation level for name verification
                 if athlete_search and athlete_search.lower() not in name.lower():
                     continue
 
+                player_id_str = ""
+                if isinstance(a, dict) and 'url' in a:
+                    match = re.search(r'/player/(\d+)', str(a['url']))
+                    if match: player_id_str = match.group(1)
+
                 position_tag = "—"
                 player_summary = "No stats loaded"
+                
+                # 5. O(1) Local Memory Lookup Replacing db.stats.find_one()
+                stat_record = None
+                if player_id_str:
+                    stat_record = stats_map.get(player_id_str) or stats_map.get(safe_int(player_id_str))
 
-                if player_id:
-                    stat_record = db.stats.find_one({"player_id": player_id, "stat_type": "REGULAR_SEASON"})
-                    if stat_record:
-                        position_tag = stat_record.get('position', '—').strip().upper()
+                if stat_record:
+                    position_tag = stat_record.get('position', '—').strip().upper()
+                    if position_tag in ('G', 'GK', 'GOALIE'): goalie_count += 1
+                    else: skater_count += 1
+
+                    stats_obj = stat_record.get('stats') or {}
+                    gp = safe_int(stats_obj.get('GP') or stats_obj.get('gp'))
+                    g = safe_int(stats_obj.get('G') or stats_obj.get('g'))
+                    a_count = safe_int(stats_obj.get('A') or stats_obj.get('a'))
+                    pts = safe_int(stats_obj.get('PTS') or stats_obj.get('pts'))
+                    
+                    if pts == 0 and (g > 0 or a_count > 0): 
+                        pts = g + a_count
+
+                    total_games += gp
+                    total_goals += g
+                    total_assists += a_count
+                    if gp > 0: scored_records_count += 1
+
+                    if position_tag in ('G', 'GK', 'GOALIE'):
+                        # Fast-path fallback evaluation for Save Percentage
+                        sv_raw = next((stats_obj[k] for k in SV_KEYS if k in stats_obj), 0)
                         
-                        if position_tag in ['G', 'GK', 'GOALIE']:
-                            goalie_count += 1
-                        else:
-                            skater_count += 1
-
-                        stats_obj = stat_record.get('stats', {})
-                        gp = stats_obj.get('GP', 0)
-                        g = stats_obj.get('G', 0)
-                        a_count = stats_obj.get('A', 0)
-                        pts = stats_obj.get('PTS', (int(g) + int(a_count)))
-
                         try:
-                            total_games += int(gp)
-                            total_goals += int(g)
-                            total_assists += int(a_count)
-                            if int(gp) > 0:
-                                scored_records_count += 1
+                            sv_str = str(sv_raw).replace('%', '').strip()
+                            sv_float = float(sv_str) if sv_str else 0.0
+                            if 0.0 < sv_float <= 1.0: 
+                                sv_float *= 100.0
+
+                            if sv_float > max_sv_pct and sv_float > 0:
+                                max_sv_pct = sv_float
+                                top_goalie_name = f"{name} ({sv_float:.1f}%)"
                         except (ValueError, TypeError):
                             pass
-
-                        if position_tag in ['G', 'GK', 'GOALIE']:
-                            sv = stats_obj.get('GVSV%', stats_obj.get('SV%', '—'))
-                            player_summary = f"GP: {gp} | SV%: {sv}"
-                        else:
-                            player_summary = f"GP: {gp} | G: {g} | A: {a_count} | PTS: {pts}"
+                        player_summary = f"GP: {gp} | SV%: {sv_raw}"
+                    else:
+                        if pts > max_points:
+                            max_points = pts
+                            top_scorer_name = f"{name} ({pts} PTS)"
+                        if a_count > max_assists:
+                            max_assists = a_count
+                            top_assister_name = f"{name} ({a_count} A)"
+                        player_summary = f"GP: {gp} | G: {g} | A: {a_count} | PTS: {pts}"
 
                 athletes_payload.append({
                     "name": name,
@@ -479,13 +522,13 @@ def get_teams_roster():
                 })
 
             avg_gp = round(total_games / scored_records_count, 1) if scored_records_count > 0 else "—"
-
+            
             results.append({
                 "id": str(record.get('_id')),
                 "team_name": record.get('name', '—'),
                 "league": record.get('memberOf', {}).get('name', '—') if record.get('memberOf') else '—',
                 "coach": ", ".join(coaches) if coaches else '—',
-                "athletes": athletes_payload, 
+                "athletes": athletes_payload,
                 "roster_count": len(athletes_payload),
                 "stats": {
                     "avg_games_played": avg_gp,
@@ -493,24 +536,19 @@ def get_teams_roster():
                     "total_team_assists": total_assists,
                     "goalies": goalie_count,
                     "skaters": skater_count,
-                    "cohort_season": record.get('season', f"{team_year}-{team_year+1}")
+                    "cohort_season": record.get('season', f"{team_year}-{team_year+1}"),
+                    "top_scorer": top_scorer_name,
+                    "top_assister": top_assister_name,
+                    "top_goalie": top_goalie_name
                 }
             })
 
-        return jsonify({
-            "data": results,
-            "total": len(results),
-            "query": f"db.teams.find({str(query)})"
-        }), 200
+        generated_query_log = f"db.teams.find({{ 'name': /{selected_team}/i }})" if selected_team else "db.teams.find({})"
+        return jsonify({"data": results, "total": len(results), "query": generated_query_log}), 200
 
     except Exception as e:
         print(f"Error fetching populated team roster data splits: {str(e)}")
-        return jsonify({"data": [], "total": 0, "query": "error", "error": str(e)}), 500
-
-
-
-
-
+        return jsonify({"data": [], "total": 0, "query": "db.teams.find({})", "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
