@@ -172,3 +172,37 @@ tbody td {
 }
 
 .pager button:disabled { opacity: 0.3; cursor: default; }
+
+/* Responsive container patch for PlayerTable and TeamTable */
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px; /* Forces readable width in horizontal scroll mode on mobile */
+}
+
+/* Pagination row wrapper responsiveness */
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .pagination {
+    flex-direction: column;
+    text-align: center;
+  }
+}

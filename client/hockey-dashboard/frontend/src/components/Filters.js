@@ -10,7 +10,10 @@ export default function Filters({ filters, values, onChange }) {
         <label className={styles.label}>Birth year</label>
         <select className={styles.select} value={values.birthYear} onChange={set('birthYear')}>
           <option value="">All years</option>
-          {(filters.birthYears || []).map(y => <option key={y} value={y}>{y}</option>)}
+          {[...new Set(filters.birthYears || [])].map(y => (
+  <option key={y} value={y}>{y}</option>
+))}
+
         </select>
       </div>
 

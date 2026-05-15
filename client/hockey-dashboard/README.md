@@ -5,7 +5,7 @@ and lets you query players by birth year, league, season, and position.
 
 ```
 hockey-dashboard/
-├── backend/
+├── api-services/
 │   ├── api.py              Flask REST API → MongoDB
 │   ├── requirements.txt
 │   └── .env.example

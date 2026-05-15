@@ -1,6 +1,5 @@
 // src/api.js
 // Centralised fetch calls to the Flask backend
-
 const BASE = process.env.REACT_APP_API_URL || '';
 
 async function get(path, params = {}) {
@@ -13,8 +12,41 @@ async function get(path, params = {}) {
   return res.json();
 }
 
-export const fetchFilters  = ()       => get('/api/filters');
-export const fetchMetrics  = (params) => get('/api/metrics', params);
-export const fetchPlayers  = (params) => get('/api/players', params);
-export const fetchBirthChart = ()     => get('/api/charts/birthyear');
-export const fetchPlayer   = (id)     => get(`/api/player/${id}`);
+// ── Existing Player & Global Endpoints ──
+export const fetchFilters = () => get('/api/filters');
+export const fetchMetrics = (params) => get('/api/metrics', params);
+export const fetchPlayers = (params) => get('/api/players', params);
+export const fetchBirthChart = () => get('/api/charts/birthyear');
+export const fetchPlayer = (id) => get(`/api/player/${id}`);
+
+// ── Refactored Team Endpoints (Using the unified get helper) ──
+
+/**
+ * Fetches dropdown data options for team view filtering matrix
+ */
+export async function fetchTeamFilters() {
+  try {
+    return await get('/api/filters/teams');
+  } catch (err) {
+    console.error('Error fetching team filters:', err);
+    // Safe placeholder prevents app crashes if server drop down payload is missing
+    return { leagues: [] };
+  }
+}
+
+/**
+ * Fetches filtered team listings using automated string query building engine
+ */
+export async function fetchTeams(params) {
+  try {
+    return await get('/api/teams', params);
+  } catch (err) {
+    console.error('Error fetching team listings:', err);
+    // Safe placeholder matching table component execution layout mapping
+    return { 
+      data: [], 
+      total: 0, 
+      query: 'SELECT * FROM teams LIMIT 50; /* Error Fallback Local Log */' 
+    };
+  }
+}

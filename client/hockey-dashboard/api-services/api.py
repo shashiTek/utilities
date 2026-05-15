@@ -20,6 +20,9 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from bson import ObjectId
 import json
+import re
+from datetime import datetime
+
 
 app = Flask(__name__)
 CORS(app)  # Allow React dev server on :3000
@@ -337,6 +340,177 @@ def build_query_string(birth_year, season, league, position, search):
         f'  {{ $sort: {{ player_name: 1 }} }}\n'
         f'])'
     )
+
+from flask import jsonify, request
+
+@app.route('/api/filters/teams', methods=['GET'])
+def get_team_filters():
+    try:
+        # 1. Direct connection to your teams collection (adjust name to your database instance)
+        teams_collection = db.teams  
+        
+        # 2. Extract distinct values directly inside MongoDB engine for optimal performance
+        # 'name' maps to 'Albany Academy' string from your record
+        unique_teams = teams_collection.distinct('name')
+        
+        # 'memberOf.name' or 'location.name' (Update if leagues are grouped inside memberOf nested objects)
+        unique_leagues = teams_collection.distinct('league') or teams_collection.distinct('memberOf.name')
+
+        # 3. Clean up non-string placeholders, strip white space, and filter out null flags
+        teams_list = sorted([str(t).strip() for t in unique_teams if t])
+        leagues_list = sorted([str(l).strip() for l in unique_leagues if l])
+
+        # 4. Return structural schema expected by your React frontend
+        return jsonify({
+            "teams": teams_list,
+            "leagues": leagues_list
+        }), 200
+
+    except Exception as e:
+        # Error logger safeguards app against server downtime drops
+        print(f"Error compiling team filters lookup matrix: {str(e)}")
+        return jsonify({
+            "error": "Failed to compile filter options matrices",
+            "teams": [],
+            "leagues": []
+        }), 500
+
+
+
+@app.route('/api/teams', methods=['GET'])
+def get_teams_roster():
+    try:
+        selected_team = request.args.get('search', '').strip()
+        athlete_search = request.args.get('athlete', '').strip()
+        coach_search = request.args.get('coach', '').strip()
+        selected_league = request.args.get('league', '').strip()
+
+        teams_collection = db.teams
+        query = {}
+        if selected_team:
+            query['name'] = selected_team
+        if selected_league:
+            query['memberOf.name'] = selected_league 
+
+        cursor = teams_collection.find(query)
+        results = []
+
+        for record in cursor:
+            raw_athletes = record.get('athlete', [])
+            raw_coaches = record.get('coach', [])
+            team_year = record.get('year', 2026)
+
+            coaches = []
+            for c in raw_coaches:
+                if isinstance(c, dict) and 'name' in c:
+                    coaches.append(str(c['name']).strip())
+                elif isinstance(c, str) and c.strip():
+                    coaches.append(c.strip())
+
+            if coach_search:
+                coaches = [c for c in coaches if coach_search.lower() in c.lower()]
+                if not coaches: continue
+
+            athletes_payload = []
+            goalie_count = 0
+            skater_count = 0
+            total_games = 0
+            total_goals = 0
+            total_assists = 0
+            scored_records_count = 0
+
+            for a in raw_athletes:
+                if not a: continue
+                
+                name = ""
+                player_id = ""
+                
+                if isinstance(a, dict):
+                    name = str(a.get('name', '')).strip()
+                    url = str(a.get('url', ''))
+                    match = re.search(r'/player/(\d+)', url)
+                    if match:
+                        player_id = match.group(1)
+                else:
+                    name = str(a).strip()
+
+                # Fixed: Corrected indentation level for name verification
+                if athlete_search and athlete_search.lower() not in name.lower():
+                    continue
+
+                position_tag = "—"
+                player_summary = "No stats loaded"
+
+                if player_id:
+                    stat_record = db.stats.find_one({"player_id": player_id, "stat_type": "REGULAR_SEASON"})
+                    if stat_record:
+                        position_tag = stat_record.get('position', '—').strip().upper()
+                        
+                        if position_tag in ['G', 'GK', 'GOALIE']:
+                            goalie_count += 1
+                        else:
+                            skater_count += 1
+
+                        stats_obj = stat_record.get('stats', {})
+                        gp = stats_obj.get('GP', 0)
+                        g = stats_obj.get('G', 0)
+                        a_count = stats_obj.get('A', 0)
+                        pts = stats_obj.get('PTS', (int(g) + int(a_count)))
+
+                        try:
+                            total_games += int(gp)
+                            total_goals += int(g)
+                            total_assists += int(a_count)
+                            if int(gp) > 0:
+                                scored_records_count += 1
+                        except (ValueError, TypeError):
+                            pass
+
+                        if position_tag in ['G', 'GK', 'GOALIE']:
+                            sv = stats_obj.get('GVSV%', stats_obj.get('SV%', '—'))
+                            player_summary = f"GP: {gp} | SV%: {sv}"
+                        else:
+                            player_summary = f"GP: {gp} | G: {g} | A: {a_count} | PTS: {pts}"
+
+                athletes_payload.append({
+                    "name": name,
+                    "position": position_tag,
+                    "summary": player_summary
+                })
+
+            avg_gp = round(total_games / scored_records_count, 1) if scored_records_count > 0 else "—"
+
+            results.append({
+                "id": str(record.get('_id')),
+                "team_name": record.get('name', '—'),
+                "league": record.get('memberOf', {}).get('name', '—') if record.get('memberOf') else '—',
+                "coach": ", ".join(coaches) if coaches else '—',
+                "athletes": athletes_payload, 
+                "roster_count": len(athletes_payload),
+                "stats": {
+                    "avg_games_played": avg_gp,
+                    "total_team_goals": total_goals,
+                    "total_team_assists": total_assists,
+                    "goalies": goalie_count,
+                    "skaters": skater_count,
+                    "cohort_season": record.get('season', f"{team_year}-{team_year+1}")
+                }
+            })
+
+        return jsonify({
+            "data": results,
+            "total": len(results),
+            "query": f"db.teams.find({str(query)})"
+        }), 200
+
+    except Exception as e:
+        print(f"Error fetching populated team roster data splits: {str(e)}")
+        return jsonify({"data": [], "total": 0, "query": "error", "error": str(e)}), 500
+
+
+
+
+
 
 
 # ---------------------------------------------------------------------------
