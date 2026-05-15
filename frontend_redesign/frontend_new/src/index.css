@@ -1,0 +1,55 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:           #F5F4F0;
+  --bg-card:      #FFFFFF;
+  --bg-surface:   #EFEEEA;
+  --bg-input:     #FFFFFF;
+  --sidebar-bg:   #111110;
+
+  --border:       #E2E0D8;
+  --border-mid:   #CCCAC0;
+  --border-dark:  #111110;
+
+  --text:         #111110;
+  --text-muted:   #6B6A65;
+  --text-dim:     #9E9C96;
+  --text-inv:     #F5F4F0;
+
+  --accent:       #E8431A;
+  --accent-dim:   rgba(232,67,26,0.10);
+  --accent-hover: #C8360F;
+
+  --teal:         #0D7C6B;
+  --teal-dim:     rgba(13,124,107,0.10);
+  --amber:        #B8840A;
+  --amber-dim:    rgba(184,132,10,0.10);
+  --blue:         #1B5FA8;
+  --blue-dim:     rgba(27,95,168,0.10);
+  --red:          #C0392B;
+  --red-dim:      rgba(192,57,43,0.10);
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body:    'Geist', sans-serif;
+  --font-mono:    'Geist Mono', monospace;
+
+  --radius:       6px;
+  --radius-lg:    10px;
+
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:    0 4px 12px rgba(0,0,0,0.08);
+}
+
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+button, select, input { font-family: var(--font-body); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
