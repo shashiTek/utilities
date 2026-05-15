@@ -392,11 +392,9 @@ def get_teams_roster():
 
         # Fetch matching teams immediately to memory to collect player IDs
         matching_teams = list(db.teams.find(query))
-        
+
         # 2. Extract All Player IDs for Batch Fetching
         all_player_ids = set()
-        player_id_to_url_map = {}  # Helps match int vs str types later
-        
         for record in matching_teams:
             for a in record.get('athlete', []):
                 if isinstance(a, dict) and 'url' in a:
@@ -421,14 +419,14 @@ def get_teams_roster():
                     stats_map[int(pid)] = stat
 
         # Helpers
-        SV_KEYS = ('GVSV%', 'SV%', 'sv%')
+        SV_KEYS = ('GVSV%', 'SV%', 'sv%', 'sv_pct')
         def safe_int(val):
             if val is None or str(val).strip() == '': return 0
             try: return int(float(str(val).replace(',', '').strip()))
             except (ValueError, TypeError): return 0
 
         results = []
-        
+
         # 4. Process Teams Rapidly with In-Memory Mapping
         for record in matching_teams:
             raw_athletes = record.get('athlete', [])
@@ -439,7 +437,7 @@ def get_teams_roster():
             for c in raw_coaches:
                 c_name = str(c.get('name', '')).strip() if isinstance(c, dict) else str(c).strip()
                 if c_name: coaches.append(c_name)
-            
+
             if coach_search:
                 coaches = [c for c in coaches if coach_search.lower() in c.lower()]
                 if not coaches: continue
@@ -454,7 +452,7 @@ def get_teams_roster():
             for a in raw_athletes:
                 if not a: continue
                 name = str(a.get('name', '')).strip() if isinstance(a, dict) else str(a).strip()
-                
+
                 if athlete_search and athlete_search.lower() not in name.lower():
                     continue
 
@@ -465,7 +463,7 @@ def get_teams_roster():
 
                 position_tag = "—"
                 player_summary = "No stats loaded"
-                
+
                 # 5. O(1) Local Memory Lookup Replacing db.stats.find_one()
                 stat_record = None
                 if player_id_str:
@@ -481,7 +479,7 @@ def get_teams_roster():
                     g = safe_int(stats_obj.get('G') or stats_obj.get('g'))
                     a_count = safe_int(stats_obj.get('A') or stats_obj.get('a'))
                     pts = safe_int(stats_obj.get('PTS') or stats_obj.get('pts'))
-                    
+
                     if pts == 0 and (g > 0 or a_count > 0): 
                         pts = g + a_count
 
@@ -491,21 +489,56 @@ def get_teams_roster():
                     if gp > 0: scored_records_count += 1
 
                     if position_tag in ('G', 'GK', 'GOALIE'):
-                        # Fast-path fallback evaluation for Save Percentage
+                        
+                        # 1. Array and List-safe property extraction block
                         sv_raw = next((stats_obj[k] for k in SV_KEYS if k in stats_obj), 0)
                         
+                        # Handle extraction if stats_obj itself is a list, or contains array values
+                        def get_array_or_dict_val(obj, target_keys, default_val='—'):
+                            if isinstance(obj, list):
+                                # If the object is a list of dicts/items, search inside the elements
+                                for item in obj:
+                                    if isinstance(item, dict):
+                                        val = next((item[k] for k in target_keys if k in item), None)
+                                        if val is not None:
+                                            return val
+                                    elif str(item).strip().lower() in [str(k).lower() for k in target_keys]:
+                                        return item
+                            elif isinstance(obj, dict):
+                                # If it's a standard dictionary structure
+                                return next((obj[k] for k in target_keys if k in obj), default_val)
+                            return default_val
+
+                        # 2. Extract values dynamically supporting both array and dictionary keys
+                        gaa_raw = get_array_or_dict_val(stats_obj, ('GAA', 'gaa'), '—')
+                        so_raw = get_array_or_dict_val(stats_obj, ('SO', 'so'), 0)
+                        toi_raw = get_array_or_dict_val(stats_obj, ('TOI', 'toi'), '—')
+                        
+                        w_raw = get_array_or_dict_val(stats_obj, ('W', 'w'), 0)
+                        l_raw = get_array_or_dict_val(stats_obj, ('L', 'l'), 0)
+                        ot_raw = stats_obj.get('OT') or stats_obj.get('ot') if isinstance(stats_obj, dict) else None
+
+                        # 3. Clean up the overtime null representation string
+                        if ot_raw is not None and str(ot_raw).strip().lower() != 'null':
+                            record_str = f"{w_raw}-{l_raw}-{ot_raw}"
+                        else:
+                            record_str = f"{w_raw}-{l_raw}"
+
+                        # 4. Leaderboard Tracking Optimization
                         try:
                             sv_str = str(sv_raw).replace('%', '').strip()
                             sv_float = float(sv_str) if sv_str else 0.0
-                            if 0.0 < sv_float <= 1.0: 
-                                sv_float *= 100.0
+                            comp_float = sv_float * 100.0 if 0.0 < sv_float <= 1.0 else sv_float
 
-                            if sv_float > max_sv_pct and sv_float > 0:
-                                max_sv_pct = sv_float
-                                top_goalie_name = f"{name} ({sv_float:.1f}%)"
+                            if comp_float > max_sv_pct and comp_float > 0:
+                                max_sv_pct = comp_float
+                                top_goalie_name = f"{name} ({sv_raw})"
                         except (ValueError, TypeError):
                             pass
-                        player_summary = f"GP: {gp} | SV%: {sv_raw}"
+
+                        # 5. Formatted Profile Summary Output
+                        player_summary = f"GP: {gp} | REC: {record_str} | GAA: {gaa_raw} | SV%: {sv_raw} | SO: {so_raw} | TOI: {toi_raw}"
+
                     else:
                         if pts > max_points:
                             max_points = pts
@@ -522,7 +555,7 @@ def get_teams_roster():
                 })
 
             avg_gp = round(total_games / scored_records_count, 1) if scored_records_count > 0 else "—"
-            
+
             results.append({
                 "id": str(record.get('_id')),
                 "team_name": record.get('name', '—'),
@@ -549,6 +582,8 @@ def get_teams_roster():
     except Exception as e:
         print(f"Error fetching populated team roster data splits: {str(e)}")
         return jsonify({"data": [], "total": 0, "query": "db.teams.find({})", "error": str(e)}), 500
+
+
 
 
 # ---------------------------------------------------------------------------
