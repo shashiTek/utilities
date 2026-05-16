@@ -2,147 +2,144 @@ import React, { useState, useEffect, useCallback } from 'react';
 import MetricCards from './components/MetricCards';
 import Filters from './components/Filters';
 import PlayerTable from './components/PlayerTable';
+import PlayerCompare from './components/PlayerCompare';
 import QueryDisplay from './components/QueryDisplay';
 import TeamView from './components/TeamView';
 import useDebounce from './hooks/useDebounce';
 import { fetchFilters, fetchPlayers, fetchTeamFilters, fetchTeams } from './api';
 import styles from './App.module.css';
 
+// ── Default filter states ────────────────────────────────────────────────────
 const DEFAULT_PLAYER_FILTERS = {
-  birthYear: '',
-  season: '',
-  league: '',
-  position: '',
-  search: '',
-  page: 0,
-  sortBy: 'player_name',
-  sortDir: 'asc',
+  birthYear: '', season: '', league: '', position: '', search: '',
+  page: 0, sortBy: 'player_name', sortDir: 'asc',
 };
 
 const DEFAULT_TEAM_FILTERS = {
-  search: '',
-  athlete: '',
-  coach: '',
-  league: '',
-  page: 0,
-  sortBy: 'team_name',
-  sortDir: 'asc',
+  search: '', athlete: '', coach: '', league: '',
+  page: 0, sortBy: 'team_name', sortDir: 'asc',
 };
 
+// ── Nav items ────────────────────────────────────────────────────────────────
+const NAV = [
+  { id: 'dashboard', label: 'Dashboard', icon: '◈' },
+  { id: 'players',   label: 'Players',   icon: '◇' },
+  { id: 'teams',     label: 'Teams',     icon: '◉' },
+  { id: 'leagues',   label: 'Leagues',   icon: '◎' },
+];
+
 export default function App() {
-  const [activeView, setActiveView] = useState('players');
-  const [filterOptions, setFilterOptions] = useState({});
+  const [activeView, setActiveView] = useState('dashboard');
+
+  // ── Filter options (dropdown data) ──
+  const [filterOptions,     setFilterOptions]     = useState({});
   const [teamFilterOptions, setTeamFilterOptions] = useState({});
+
+  // ── Active filter values ──
   const [playerFilters, setPlayerFilters] = useState(DEFAULT_PLAYER_FILTERS);
-  const [teamFilters, setTeamFilters] = useState(DEFAULT_TEAM_FILTERS);
-  
+  const [teamFilters,   setTeamFilters]   = useState(DEFAULT_TEAM_FILTERS);
+
+  // ── Data ──
   const [players, setPlayers] = useState({ data: [], total: 0, query: '' });
-  const [teams, setTeams] = useState({ data: [], total: 0, query: '' });
+  const [teams,   setTeams]   = useState({ data: [], total: 0, query: '' });
   const [metrics, setMetrics] = useState({});
+
+  // ── UI state ──
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error,   setError]   = useState(null);
 
   const debouncedPlayerSearch = useDebounce(playerFilters.search, 400);
-  const debouncedTeamSearch = useDebounce(teamFilters.search, 400);
+  const debouncedTeamSearch   = useDebounce(teamFilters.search,   400);
 
+  // ── Boot: load dropdown options once ──
   useEffect(() => {
     fetchFilters().then(setFilterOptions).catch(console.error);
     fetchTeamFilters().then(setTeamFilterOptions).catch(console.error);
   }, []);
 
+  // ── Data loader ──────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      if (activeView === 'players') {
-        const playerParams = {
-          birthYear: playerFilters.birthYear,
-          season: playerFilters.season,
-          league: playerFilters.league,
-          position: playerFilters.position,
-          search: debouncedPlayerSearch,
-          page: playerFilters.page,
+    // Players view and Dashboard share the same player data
+    if (activeView === 'teams') {
+      setLoading(true);
+      setError(null);
+      try {
+        const t = await fetchTeams({
+          search:   debouncedTeamSearch,
+          athlete:  teamFilters.athlete,
+          coach:    teamFilters.coach,
+          league:   teamFilters.league,
+          page:     teamFilters.page,
           pageSize: 50,
-          sortBy: playerFilters.sortBy,
-          sortDir: playerFilters.sortDir,
-        };
-        try {
-          const responseData = await fetchPlayers(playerParams);
-          if (responseData) {
-            // Fix: Store complete API metadata dictionary securely into state wrapper
-            setPlayers(responseData);
-            if (responseData.metrics) {
-              setMetrics(responseData.metrics);
-            }
-          }
-        } catch (error) {
-          console.error("Failed to load player view payload splits:", error);
-        }
-      } else if (activeView === 'teams') {
-        const teamParams = {
-          search: debouncedTeamSearch,
-          athlete: teamFilters.athlete,
-          coach: teamFilters.coach,
-          league: teamFilters.league,
-          page: teamFilters.page,
-          pageSize: 50,
-          sortBy: teamFilters.sortBy,
-          sortDir: teamFilters.sortDir,
-        };
-        const t = await fetchTeams(teamParams);
+          sortBy:   teamFilters.sortBy,
+          sortDir:  teamFilters.sortDir,
+        });
         setTeams(t);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      } catch (err) { setError(err.message); }
+      finally       { setLoading(false); }
+      return;
     }
-  }, [activeView, playerFilters, debouncedPlayerSearch, teamFilters, debouncedTeamSearch]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+    // Dashboard and Players both need player data
+    if (activeView === 'dashboard' || activeView === 'players') {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchPlayers({
+          birthYear: playerFilters.birthYear,
+          season:    playerFilters.season,
+          league:    playerFilters.league,
+          position:  playerFilters.position,
+          search:    debouncedPlayerSearch,
+          page:      playerFilters.page,
+          pageSize:  50,
+          sortBy:    playerFilters.sortBy,
+          sortDir:   playerFilters.sortDir,
+        });
+        if (res) {
+          setPlayers(res);
+          if (res.metrics) setMetrics(res.metrics);
+        }
+      } catch (err) { setError(err.message); }
+      finally       { setLoading(false); }
+    }
+    // "compare" and "leagues" views don't need a data load here
+  }, [
+    activeView,
+    playerFilters, debouncedPlayerSearch,
+    teamFilters,   debouncedTeamSearch,
+  ]);
 
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Sort handlers ────────────────────────────────────────────────────────
   const handlePlayerSort = (key) => setPlayerFilters(f => ({
     ...f,
-    sortBy: key,
+    sortBy:  key,
     sortDir: f.sortBy === key && f.sortDir === 'asc' ? 'desc' : 'asc',
-    page: 0,
+    page:    0,
   }));
 
   const handleTeamSort = (key) => setTeamFilters(f => ({
     ...f,
-    sortBy: key,
+    sortBy:  key,
     sortDir: f.sortBy === key && f.sortDir === 'asc' ? 'desc' : 'asc',
-    page: 0,
+    page:    0,
   }));
 
-  const renderContentView = () => {
+  // ── View renderer ────────────────────────────────────────────────────────
+  const renderView = () => {
     switch (activeView) {
-      case 'teams':
-        return (
-          <TeamView
-            filterOptions={teamFilterOptions}
-            filters={teamFilters}
-            setFilters={setTeamFilters}
-            teams={teams}
-            loading={loading}
-            handleSort={handleTeamSort}
-          />
-        );
-      case 'leagues':
-        return (
-          <div className={styles.emptyView}>
-            <h2>League Overviews</h2>
-            <p>League standing filters and distribution matrices go here.</p>
-          </div>
-        );
-      case 'players':
-      default:
+
+      case 'dashboard':
         return (
           <>
-            <Filters filters={filterOptions} values={playerFilters} onChange={setPlayerFilters} />
             <MetricCards metrics={metrics} loading={loading} />
+            <Filters
+              filters={filterOptions}
+              values={playerFilters}
+              onChange={setPlayerFilters}
+            />
             <QueryDisplay query={players.query || ''} />
             <PlayerTable
               data={players.data || []}
@@ -158,14 +155,41 @@ export default function App() {
             />
           </>
         );
+
+      case 'players':
+        return <PlayerCompare />;
+
+      case 'teams':
+        return (
+          <TeamView
+            filterOptions={teamFilterOptions}
+            filters={teamFilters}
+            setFilters={setTeamFilters}
+            teams={teams}
+            loading={loading}
+            handleSort={handleTeamSort}
+          />
+        );
+
+      case 'leagues':
+        return (
+          <div className={styles.emptyView}>
+            <h2>League Overviews</h2>
+            <p>League standing filters and distribution matrices go here.</p>
+          </div>
+        );
+
+      default:
+        return null;
     }
   };
 
-  const getViewTitle = () => activeView.charAt(0).toUpperCase() + activeView.slice(1);
+  const activeNav = NAV.find(n => n.id === activeView);
 
   return (
     <div className={styles.layout}>
-      {/* ── Sidebar ─────────────────────────── */}
+
+      {/* ── Sidebar ──────────────────────────────────────────── */}
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
           <div className={styles.brandTop}>
@@ -174,38 +198,29 @@ export default function App() {
           </div>
           <div className={styles.brandSub}>Player Analytics</div>
         </div>
+
         <nav className={styles.nav}>
           <div className={styles.navLabel}>Views</div>
-          <button
-            type="button"
-            className={`${styles.navItem} ${activeView === 'players' ? styles.navActive : ''}`}
-            onClick={() => setActiveView('players')}
-          >
-            <span className={styles.navIcon}>◈</span> Players
-          </button>
-          <button
-            type="button"
-            className={`${styles.navItem} ${activeView === 'teams' ? styles.navActive : ''}`}
-            onClick={() => setActiveView('teams')}
-          >
-            <span className={styles.navIcon}>◇</span> Teams
-          </button>
-          <button
-            type="button"
-            className={`${styles.navItem} ${activeView === 'leagues' ? styles.navActive : ''}`}
-            onClick={() => setActiveView('leagues')}
-          >
-            <span className={styles.navIcon}>◉</span> Leagues
-          </button>
+          {NAV.map(({ id, label, icon }) => (
+            <button
+              key={id}
+              type="button"
+              className={`${styles.navItem} ${activeView === id ? styles.navActive : ''}`}
+              onClick={() => setActiveView(id)}
+            >
+              <span className={styles.navIcon}>{icon}</span> {label}
+            </button>
+          ))}
         </nav>
+
         <div className={styles.sideStats}>
           <div className={styles.sideStatsTitle}>Summary</div>
           {[
             ['Total Players', metrics.totalPlayers?.toLocaleString() ?? '—'],
-            ['Forwards', metrics.forwards?.toLocaleString() ?? '—'],
-            ['Defensemen', metrics.defensemen?.toLocaleString() ?? '—'],
-            ['Goalies', metrics.goalies?.toLocaleString() ?? '—'],
-            ['Leagues', metrics.leagueCount ?? '—'],
+            ['Forwards',      metrics.forwards?.toLocaleString()     ?? '—'],
+            ['Defensemen',    metrics.defensemen?.toLocaleString()   ?? '—'],
+            ['Goalies',       metrics.goalies?.toLocaleString()      ?? '—'],
+            ['Leagues',       metrics.leagueCount                    ?? '—'],
           ].map(([label, val]) => (
             <div key={label} className={styles.sideStatRow}>
               <span className={styles.sideStatLabel}>{label}</span>
@@ -215,21 +230,24 @@ export default function App() {
         </div>
       </aside>
 
-      {/* ── Main ───────────────────────────── */}
+      {/* ── Main ─────────────────────────────────────────────── */}
       <main className={styles.main}>
         <div className={styles.topbar}>
           <div className={styles.titleGroup}>
-            <h1 className={styles.pageTitle}>{getViewTitle()} Stats</h1>
+            <h1 className={styles.pageTitle}>{activeNav?.label}</h1>
             <span className={styles.pageSubtitle}>
-              {activeView === 'players'
+              {activeView === 'dashboard'
                 ? 'Query by birth year, league, season & position'
+                : activeView === 'players'
+                ? 'Search and compare two players head-to-head'
                 : `Overview breakdown for active database ${activeView}`}
             </span>
           </div>
           {error && <div className={styles.error}>⚠ {error}</div>}
         </div>
+
         <div className={styles.content}>
-          {renderContentView()}
+          {renderView()}
         </div>
       </main>
     </div>
