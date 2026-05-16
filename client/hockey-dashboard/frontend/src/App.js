@@ -2,12 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import MetricCards from './components/MetricCards';
 import Filters from './components/Filters';
 import PlayerTable from './components/PlayerTable';
-import Charts from './components/Charts';
 import QueryDisplay from './components/QueryDisplay';
-import TeamView from './components/TeamView'; // Fixed: Added missing import
+import TeamView from './components/TeamView';
 import useDebounce from './hooks/useDebounce';
-// Fixed: Added fetchTeamFilters and fetchTeams missing API hooks
-import { fetchFilters, fetchMetrics, fetchPlayers, fetchBirthChart, fetchTeamFilters, fetchTeams } from './api';
+import { fetchFilters, fetchPlayers, fetchTeamFilters, fetchTeams } from './api';
 import styles from './App.module.css';
 
 const DEFAULT_PLAYER_FILTERS = {
@@ -22,10 +20,10 @@ const DEFAULT_PLAYER_FILTERS = {
 };
 
 const DEFAULT_TEAM_FILTERS = {
-  search: '', 
-  athlete: '', 
-  coach: '', 
-  league: '', 
+  search: '',
+  athlete: '',
+  coach: '',
+  league: '',
   page: 0,
   sortBy: 'team_name',
   sortDir: 'asc',
@@ -34,27 +32,22 @@ const DEFAULT_TEAM_FILTERS = {
 export default function App() {
   const [activeView, setActiveView] = useState('players');
   const [filterOptions, setFilterOptions] = useState({});
-  const [teamFilterOptions, setTeamFilterOptions] = useState({}); // Fixed: Added separate team filter data state
-  
-  // ── Fixed: Separated individual filter state values and their setters ──
+  const [teamFilterOptions, setTeamFilterOptions] = useState({});
   const [playerFilters, setPlayerFilters] = useState(DEFAULT_PLAYER_FILTERS);
   const [teamFilters, setTeamFilters] = useState(DEFAULT_TEAM_FILTERS);
   
   const [players, setPlayers] = useState({ data: [], total: 0, query: '' });
-  const [teams, setTeams] = useState({ data: [], total: 0, query: '' }); // Fixed: Added missing team data state hook
+  const [teams, setTeams] = useState({ data: [], total: 0, query: '' });
   const [metrics, setMetrics] = useState({});
-  const [birthData, setBirthData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ── Fixed: Configured distinct search field debouncers for each tab ──
   const debouncedPlayerSearch = useDebounce(playerFilters.search, 400);
   const debouncedTeamSearch = useDebounce(teamFilters.search, 400);
 
   useEffect(() => {
     fetchFilters().then(setFilterOptions).catch(console.error);
-    fetchBirthChart().then(setBirthData).catch(console.error);
-    fetchTeamFilters().then(setTeamFilterOptions).catch(console.error); // Fixed: Preload team choices
+    fetchTeamFilters().then(setTeamFilterOptions).catch(console.error);
   }, []);
 
   const loadData = useCallback(async () => {
@@ -73,13 +66,18 @@ export default function App() {
           sortBy: playerFilters.sortBy,
           sortDir: playerFilters.sortDir,
         };
-
-        const [p, m] = await Promise.all([
-          fetchPlayers(playerParams),
-          fetchMetrics(playerParams)
-        ]);
-        setPlayers(p);
-        setMetrics(m);
+        try {
+          const responseData = await fetchPlayers(playerParams);
+          if (responseData) {
+            // Fix: Store complete API metadata dictionary securely into state wrapper
+            setPlayers(responseData);
+            if (responseData.metrics) {
+              setMetrics(responseData.metrics);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load player view payload splits:", error);
+        }
       } else if (activeView === 'teams') {
         const teamParams = {
           search: debouncedTeamSearch,
@@ -91,7 +89,6 @@ export default function App() {
           sortBy: teamFilters.sortBy,
           sortDir: teamFilters.sortDir,
         };
-
         const t = await fetchTeams(teamParams);
         setTeams(t);
       }
@@ -100,21 +97,12 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-    // Fixed: Fully mapped complete variable tree in hook dependency check block
-  }, [
-    activeView,
-    playerFilters,
-    debouncedPlayerSearch,
-    teamFilters,
-    debouncedTeamSearch
-  ]);
+  }, [activeView, playerFilters, debouncedPlayerSearch, teamFilters, debouncedTeamSearch]);
 
-  // Fixed: Updated to track 'loadData' handler hook reference name correctly
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // ── Fixed: Separated sorting mechanics between table views ──
   const handlePlayerSort = (key) => setPlayerFilters(f => ({
     ...f,
     sortBy: key,
@@ -129,14 +117,9 @@ export default function App() {
     page: 0,
   }));
 
-  const handleBirthYearSelect = (year) => {
-    setPlayerFilters(f => ({ ...f, birthYear: year, page: 0 }));
-  };
-
   const renderContentView = () => {
     switch (activeView) {
       case 'teams':
-        // Fixed: Swapped static fallback wrapper out for complete dynamic component integration layout
         return (
           <TeamView
             filterOptions={teamFilterOptions}
@@ -160,7 +143,6 @@ export default function App() {
           <>
             <Filters filters={filterOptions} values={playerFilters} onChange={setPlayerFilters} />
             <MetricCards metrics={metrics} loading={loading} />
-            <Charts birthYearData={birthData} metrics={metrics} onBirthYearSelect={handleBirthYearSelect} />
             <QueryDisplay query={players.query || ''} />
             <PlayerTable
               data={players.data || []}
@@ -172,6 +154,7 @@ export default function App() {
               sortDir={playerFilters.sortDir}
               onSort={handlePlayerSort}
               onPage={(p) => setPlayerFilters(f => ({ ...f, page: p }))}
+              currentPositionFilter={playerFilters.position}
             />
           </>
         );
@@ -218,9 +201,10 @@ export default function App() {
         <div className={styles.sideStats}>
           <div className={styles.sideStatsTitle}>Summary</div>
           {[
-            ['Total players', metrics.totalPlayers?.toLocaleString() ?? '—'],
-            ['Goalies', metrics.goalies ?? '—'],
-            ['Skaters', metrics.skaters ?? '—'],
+            ['Total Players', metrics.totalPlayers?.toLocaleString() ?? '—'],
+            ['Forwards', metrics.forwards?.toLocaleString() ?? '—'],
+            ['Defensemen', metrics.defensemen?.toLocaleString() ?? '—'],
+            ['Goalies', metrics.goalies?.toLocaleString() ?? '—'],
             ['Leagues', metrics.leagueCount ?? '—'],
           ].map(([label, val]) => (
             <div key={label} className={styles.sideStatRow}>

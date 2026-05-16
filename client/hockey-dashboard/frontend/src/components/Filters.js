@@ -38,7 +38,8 @@ export default function Filters({ filters, values, onChange }) {
         <select className={styles.select} value={values.position} onChange={set('position')}>
           <option value="">All positions</option>
           <option value="G">Goalie</option>
-          <option value="F/D">Skater</option>
+          <option value="D">Defense</option>
+          <option value="F">Forward</option>
         </select>
       </div>
 

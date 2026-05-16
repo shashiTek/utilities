@@ -72,112 +72,300 @@ def jsonify_mongo(data):
 #   sortBy     — field name (default "player_name")
 #   sortDir    — "asc" | "desc" (default "asc")
 # ---------------------------------------------------------------------------
+from pymongo.errors import PyMongoError
+
+from pymongo.errors import PyMongoError
+
+import re
+from flask import request, jsonify
+from pymongo.errors import PyMongoError
+
+import re
+from flask import request, jsonify
+from pymongo.errors import PyMongoError
+
+import re
+from flask import request, jsonify
+from pymongo.errors import PyMongoError
+
+import re
+from flask import request, jsonify
+from pymongo.errors import PyMongoError
+
 @app.route("/api/players")
 def get_players():
-    birth_year = request.args.get("birthYear")
-    season     = request.args.get("season")
-    league     = request.args.get("league")
-    position   = request.args.get("position")
-    search     = request.args.get("search", "").strip()
-    page       = int(request.args.get("page", 0))
-    page_size  = int(request.args.get("pageSize", 50))
-    sort_by    = request.args.get("sortBy", "player_name")
-    sort_dir   = 1 if request.args.get("sortDir", "asc") == "asc" else -1
+    try:
+        birth_year = request.args.get("birthYear")
+        season = request.args.get("season")
+        league = request.args.get("league")
+        position = request.args.get("position")
+        search = request.args.get("search", "").strip()
+        page = int(request.args.get("page", 0))
+        page_size = int(request.args.get("pageSize", 50))
+        
+        stats_collection = db["stats"]
 
-    # ------------------------------------------------------------------
-    # MongoDB aggregation pipeline
-    # Joins stats → players on player_url / url
-    # Then filters by birth year (computed from players.birthDate)
-    # ------------------------------------------------------------------
-    pipeline = [
-        # Step 1: Join stats with players bio data
-        {
-            "$lookup": {
-                "from": "players",
-                "localField": "player_url",
-                "foreignField": "url",
-                "as": "bio"
-            }
-        },
-        # Step 2: Flatten the bio array (each stat row has one player)
-        {"$unwind": {"path": "$bio", "preserveNullAndEmptyArrays": True}},
+        sort_by = request.args.get("sortBy", "player_name")
+        sort_dir = 1 if request.args.get("sortDir", "asc") == "asc" else -1
 
-        # Step 3: Extract birth year from birthDate string "YYYY-MM-DD"
-        {
-            "$addFields": {
-                "birthYear": {
-                    "$toInt": {
-                        "$substr": [
-                            {"$ifNull": ["$bio.birthDate", "0000-00-00"]},
-                            0, 4
-                        ]
+        # 1. Base Query Construction
+        base_match = {}
+        if season: 
+            base_match["season"] = season
+        if league: 
+            base_match["league"] = league
+        if position: 
+            base_match["position"] = position
+        if search:
+            base_match["$or"] = [
+                {"player_name": {"$regex": search, "$options": "i"}},
+                {"team": {"$regex": search, "$options": "i"}},
+            ]
+
+        pipeline = [{"$match": base_match}] if base_match else []
+
+        # 2. Join Collections Cleanly
+        pipeline += [
+            {
+                "$lookup": {
+                    "from": "players",
+                    "localField": "player_url",
+                    "foreignField": "url",
+                    "as": "bio"
+                }
+            },
+            {"$unwind": {"path": "$bio", "preserveNullAndEmptyArrays": True}},
+            {
+                "$addFields": {
+                    "birthYearRaw": {
+                        "$toInt": {
+                            "$substr": [
+                                {"$ifNull": ["$bio.birthDate", "0000-00-00"]}, 0, 4
+                            ]
+                        }
+                    },
+                    "birthDate": "$bio.birthDate",
+                    "birthPlace": "$bio.birthPlace",
+                    "nationality": "$bio.nationality",
+                    "knowsAbout": "$bio.knowsAbout",
+                }
+            },
+            {
+                "$addFields": {
+                    "birthYear": {
+                        "$cond": {
+                            "if": {"$or": [
+                                {"$eq": ["$birthYearRaw", 0]},
+                                {"$eq": ["$birthYearRaw", None]}
+                            ]},
+                            "then": "N/A",
+                            "else": "$birthYearRaw"
+                        }
                     }
-                },
-                "birthDate":    "$bio.birthDate",
-                "birthPlace":   "$bio.birthPlace",
-                "nationality":  "$bio.nationality",
-                "knowsAbout":   "$bio.knowsAbout",
+                }
             }
-        }
-    ]
-
-    # Step 4: Build match stage from query params
-    match = {}
-    if birth_year:
-        try:
-            match["birthYear"] = int(birth_year)
-        except ValueError:
-            pass
-    if season:
-        match["season"] = season
-    if league:
-        match["league"] = league
-    if position:
-        match["position"] = position
-    if search:
-        match["$or"] = [
-            {"player_name": {"$regex": search, "$options": "i"}},
-            {"team":        {"$regex": search, "$options": "i"}},
         ]
 
-    if match:
-        pipeline.append({"$match": match})
+        # 3. Birth Year Post-Filter Check
+        if birth_year:
+            try:
+                target_year = int(birth_year)
+                pipeline.append({"$match": {"birthYearRaw": target_year}})
+            except ValueError:
+                if birth_year.upper() == "N/A":
+                    pipeline.append({"$match": {"birthYear": "N/A"}})
 
-    # Step 5: Count total before pagination
-    count_pipeline = pipeline + [{"$count": "total"}]
-    try:
-        count_result = list(db.stats.aggregate(count_pipeline))
-        total = count_result[0]["total"] if count_result else 0
-    except PyMongoError:
-        total = 0
-
-    # Step 6: Sort + paginate
-    pipeline += [
-        {"$sort": {sort_by: sort_dir}},
-        {"$skip":  page * page_size},
-        {"$limit": page_size},
-        # Clean output — drop internal Mongo bio sub-doc
-        {
-            "$project": {
-                "bio": 0,
-                "source_player_id": 0,
-            }
+        # 4. Metrics Aggregation Engine
+        metrics = {
+            "totalPlayers": 0, "forwards": 0, "defensemen": 0, "goalies": 0,
+            "avgGP": 0, "avgGAA": 0, "avgSVP": 0, "maxPTS": 0, "leagueCount": 0,
+            "topForwardScorer": "—", "maxForwardPts": 0,
+            "topDefenseScorer": "—", "maxDefensePts": 0, "avgDefenseBlks": 0,
+            "topGoalie": "—", "maxGoalieSVP": 0, "topGoalieGAA": 0
         }
-    ]
+        
+        metrics_pipeline = list(pipeline) + [
+            {
+                "$group": {
+                    "_id": None,
+                    "totalPlayers": {"$sum": 1},
+                    "forwards": {
+                        "$sum": {
+                            "$cond": [
+                                {"$or": [
+                                    {"$in": [{"$toUpper": {"$ifNull": ["$position", ""]}}, ["F", "LW", "RW", "C", "FORWARD", "F/D", "F-D"]]},
+                                    {"$in": [{"$toUpper": {"$ifNull": ["$stats.position", ""]}}, ["F", "LW", "RW", "C", "FORWARD", "F/D", "F-D"]]}
+                                ]},
+                                1, 0
+                            ]
+                        }
+                    },
+                    "defensemen": {
+                        "$sum": {
+                            "$cond": [
+                                {"$or": [
+                                    {"$in": [{"$toUpper": {"$ifNull": ["$position", ""]}}, ["D", "DEF", "DEFENSE", "DEFENSEMAN", "F/D", "F-D"]]},
+                                    {"$in": [{"$toUpper": {"$ifNull": ["$stats.position", ""]}}, ["D", "DEF", "DEFENSE", "DEFENSEMAN", "F/D", "F-D"]]}
+                                ]},
+                                1, 0
+                            ]
+                        }
+                    },
+                    "goalies": {
+                        "$sum": {
+                            "$cond": [
+                                {"$or": [
+                                    {"$in": [{"$toUpper": {"$ifNull": ["$position", ""]}}, ["G", "GK", "GOALIE"]]},
+                                    {"$in": [{"$toUpper": {"$ifNull": ["$stats.position", ""]}}, ["G", "GK", "GOALIE"]]}
+                                ]},
+                                1, 0
+                            ]
+                        }
+                    },
+                    "avgGP": {"$avg": "$stats.gp"},
+                    "avgGAA": {
+                        "$avg": {"$cond": [{"$gt": ["$stats.gaa", 0]}, "$stats.gaa", "$$REMOVE"]}
+                    },
+                    "avgSVP": {
+                        "$avg": {"$cond": [{"$gt": ["$stats.sv_pct", 0]}, "$stats.sv_pct", "$$REMOVE"]}
+                    },
+                    "maxPTS": {"$max": "$stats.pts"},
+                    "leagues": {"$addToSet": "$league"},
+                    "all_players": {
+                        "$push": {
+                            "name": "$player_name",
+                            "position": {"$toUpper": {"$ifNull": ["$position", ""]}},
+                            "pts": {"$ifNull": ["$stats.pts", 0]},
+                            "svp": {"$ifNull": ["$stats.sv_pct", 0]},
+                            "gaa": {"$ifNull": ["$stats.gaa", 0]}
+                        }
+                    },
+                    "avgDefenseBlks": {"$avg": {"$cond": [{"$in": [{"$toUpper": {"$ifNull": ["$position", ""]}}, ["D", "DEF"]]}, "$stats.blocked_shots", "$$REMOVE"]}}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "totalPlayers": 1, "forwards": 1, "defensemen": 1, "goalies": 1,
+                    "avgGP": 1, "avgGAA": 1, "avgSVP": 1, "maxPTS": 1,
+                    "avgDefenseBlks": {"$ifNull": ["$avgDefenseBlks", 0]},
+                    "leagueCount": {"$size": "$leagues"},
+                    "top_forwards": {
+                        "$sortArray": {
+                            "input": {
+                                "$filter": {
+                                    "input": "$all_players",
+                                    "as": "p",
+                                    "cond": {"$in": ["$$p.position", ["F", "LW", "RW", "C", "FORWARD"]]}
+                                }
+                            },
+                            "sortBy": {"pts": -1}
+                        }
+                    },
+                    "top_defense": {
+                        "$sortArray": {
+                            "input": {
+                                "$filter": {
+                                    "input": "$all_players",
+                                    "as": "p",
+                                    "cond": {"$in": ["$$p.position", ["D", "DEF", "DEFENSE", "DEFENSEMAN"]]}
+                                }
+                            },
+                            "sortBy": {"pts": -1}
+                        }
+                    },
+                    "top_goalies": {
+                        "$sortArray": {
+                            "input": {
+                                "$filter": {
+                                    "input": "$all_players",
+                                    "as": "p",
+                                    "cond": {"$in": ["$$p.position", ["G", "GK", "GOALIE"]]}
+                                }
+                            },
+                            "sortBy": {"svp": -1}
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "totalPlayers": 1, "forwards": 1, "defensemen": 1, "goalies": 1,
+                    "avgGP": 1, "avgGAA": 1, "avgSVP": 1, "maxPTS": 1, "avgDefenseBlks": 1, "leagueCount": 1,
+                    "first_forward": {"$arrayElemAt": ["$top_forwards", 0]},
+                    "first_defense": {"$arrayElemAt": ["$top_defense", 0]},
+                    "first_goalie": {"$arrayElemAt": ["$top_goalies", 0]}
+                }
+            }
+        ]
 
-    try:
-        results = list(db.stats.aggregate(pipeline))
-    except PyMongoError as e:
+        try:
+            metrics_result = list(stats_collection.aggregate(metrics_pipeline))
+            if metrics_result and len(metrics_result) > 0:
+                data_row = metrics_result[0]
+                
+                raw_svp = data_row.get("avgSVP") or 0.0
+                if 0.0 < raw_svp <= 1.0:
+                    raw_svp *= 100.0
+                
+                f_top = data_row.get("first_forward") or {}
+                d_top = data_row.get("first_defense") or {}
+                g_top = data_row.get("first_goalie") or {}
+
+                raw_g_svp = g_top.get("svp", 0.0)
+                if 0.0 < raw_g_svp <= 1.0:
+                    raw_g_svp *= 100.0
+
+                metrics = {
+                    "totalPlayers": data_row.get("totalPlayers", 0),
+                    "forwards": data_row.get("forwards", 0),
+                    "defensemen": data_row.get("defensemen", 0),
+                    "goalies": data_row.get("goalies", 0),
+                    "avgGP": data_row.get("avgGP") or 0,
+                    "avgGAA": data_row.get("avgGAA") or 0,
+                    "avgSVP": raw_svp,
+                    "maxPTS": data_row.get("maxPTS") or 0,
+                    "leagueCount": data_row.get("leagueCount", 0),
+                    "topForwardScorer": f_top.get("name", "—"),
+                    "maxForwardPts": f_top.get("pts", 0),
+                    "topDefenseScorer": d_top.get("name", "—"),
+                    "maxDefensePts": d_top.get("pts", 0),
+                    "avgDefenseBlks": round(data_row.get("avgDefenseBlks", 0), 1),
+                    "topGoalie": g_top.get("name", "—"),
+                    "maxGoalieSVP": raw_g_svp,
+                    "topGoalieGAA": g_top.get("gaa", 0.0)
+                }
+        except Exception as e:
+            print(f"Metrics aggregation parsing error: {str(e)}")
+
+        # 5. Fetch Table Data & Paginate
+        total = metrics["totalPlayers"]
+
+        pipeline += [
+            {"$sort": {sort_by: sort_dir}},
+            {"$skip": page * page_size},
+            {"$limit": page_size},
+            {"$project": {"bio": 0, "birthYearRaw": 0, "source_player_id": 0}}
+        ]
+
+        results = list(stats_collection.aggregate(pipeline))
+
+        return jsonify_mongo({
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+            "pages": (total + page_size - 1) // page_size,
+            "data": results,
+            "metrics": metrics
+        })
+
+    except Exception as e:
+        print(f"Global error in get_players API: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-    return jsonify_mongo({
-        "total":    total,
-        "page":     page,
-        "pageSize": page_size,
-        "pages":    (total + page_size - 1) // page_size,
-        "data":     results,
-        "query":    build_query_string(birth_year, season, league, position, search)
-    })
+
+
+
 
 
 # ---------------------------------------------------------------------------
