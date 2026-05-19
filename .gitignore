@@ -6,6 +6,9 @@
 # Node modules
 node_modules/
 
+# Virtual environments
+.venv/
+
 # Ignore lockfiles if you prefer not to commit them
 # package-lock.json
 # yarn.lock

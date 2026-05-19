@@ -1,0 +1,287 @@
+/* ─── Root wrapper ──────────────────────────────────────────────────────────── */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  color: #1a1a1a;
+  background: #f5f4f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ─── Header bar ────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px 8px;
+  background: #f5f4f0;
+}
+.count {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+}
+.pageInfo {
+  font-size: 11px;
+  color: #aaa;
+}
+
+/* ─── Scrollable table wrapper ──────────────────────────────────────────────── */
+.tableWrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Table ─────────────────────────────────────────────────────────────────── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.loading {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ─── Header row ────────────────────────────────────────────────────────────── */
+.table thead tr {
+  background: #f5f4f0;
+  border-bottom: 1.5px solid #e2e0da;
+}
+.table th {
+  padding: 7px 10px 7px 8px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #999;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.thNum {
+  text-align: right;
+}
+.table th:hover {
+  color: #555;
+}
+.sorted {
+  color: #c0392b !important;
+}
+.arrow {
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+/* ─── Body rows ─────────────────────────────────────────────────────────────── */
+.table tbody tr {
+  border-bottom: 1px solid #eae8e3;
+  transition: background 0.1s;
+}
+.table tbody tr:hover {
+  background: #eeece7;
+}
+.table tbody tr:last-child {
+  border-bottom: none;
+}
+.table td {
+  padding: 6px 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ─── Identity cells ────────────────────────────────────────────────────────── */
+.name {
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+.teamCell {
+  overflow: hidden;
+}
+.teamText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leagueCell {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #999;
+}
+.seasonTag {
+  display: inline-block;
+  font-size: 10.5px;
+  background: #e9e7e2;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: #666;
+  font-weight: 600;
+}
+
+/* ─── Numeric cell wrapper ──────────────────────────────────────────────────── */
+.numCell {
+  padding: 4px 8px !important;
+  vertical-align: middle;
+}
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.nullVal {
+  color: #ccc;
+  display: block;
+  text-align: right;
+  padding-right: 2px;
+}
+
+/* ─── Stat bar ──────────────────────────────────────────────────────────────── */
+/*
+  Layout (inside a fixed-width td):
+
+  [ statBarWrap  ]
+    [ statBarTrack ] ← full width, low z-index
+      [ statBarFill  ] ← grows from left, clipped by track
+    [ statBarValue ] ← absolute, always on top, right-aligned
+*/
+
+.statBarWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 26px; /* row height anchor */
+}
+
+.statBarTrack {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  overflow: hidden; /* ← THIS is what prevents bars escaping the cell */
+  background: transparent;
+}
+
+.statBarFill {
+  height: 100%;
+  border-radius: 3px;
+  background: rgba(229, 115, 97, 0.18);   /* default: soft salmon */
+  transition: width 0.25s ease;
+  max-width: 100%;                          /* hard cap — never overflows */
+}
+
+/* Highlighted column (current sort) */
+.statBarHighlight {
+  background: rgba(229, 115, 97, 0.32);
+}
+
+/* Negative values (+/-) */
+.statBarNeg {
+  background: rgba(200, 80, 60, 0.22);
+}
+
+/* ─── Stat value text ────────────────────────────────────────────────────────── */
+.statBarValue {
+  position: relative;   /* sits above the track via stacking context */
+  z-index: 1;
+  margin-left: auto;    /* push to right */
+  padding-right: 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #2a2a2a;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.statBarValueHighlight {
+  font-weight: 700;
+  color: #c0392b;
+}
+
+/* ─── +/- colouring ─────────────────────────────────────────────────────────── */
+.pos .statBarValue { color: #1a7a4a; }
+.pos .statBarFill  { background: rgba(26, 122, 74, 0.18); }
+
+.neg .statBarValue { color: #c0392b; }
+.neg .statBarFill  { background: rgba(192, 57, 43, 0.18); }
+
+/* ─── Badges ────────────────────────────────────────────────────────────────── */
+.badgeG {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: #e8f4ec;
+  color: #1a7a4a;
+  letter-spacing: 0.04em;
+}
+.badgeSk {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: #eef2fb;
+  color: #1a4fa0;
+  letter-spacing: 0.04em;
+}
+
+/* ─── Empty state ───────────────────────────────────────────────────────────── */
+.empty {
+  text-align: center;
+  padding: 36px 0;
+  color: #bbb;
+  font-style: italic;
+}
+
+/* ─── Pagination ────────────────────────────────────────────────────────────── */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-top: 1px solid #e2e0da;
+  background: #f5f4f0;
+}
+.pager button {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  color: #555;
+  transition: background 0.1s, border-color 0.1s;
+}
+.pager button:hover:not(:disabled) {
+  background: #e9e7e2;
+  border-color: #bbb;
+}
+.pager button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.pager span {
+  font-size: 12px;
+  color: #888;
+  padding: 0 4px;
+}
