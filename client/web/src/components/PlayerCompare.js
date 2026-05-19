@@ -6,20 +6,23 @@ import PlayerStatsChart from './PlayerStatsChart';
 
 // ── Inline search/select dropdown ────────────────────────────────────────────
 function PlayerSearch({ slot, onSelect, disabled }) {
-  const [query, setQuery]     = useState('');
+  const [query,   setQuery]   = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [open, setOpen]       = useState(false);
+  const [open,    setOpen]    = useState(false);
 
   useEffect(() => {
-    if (query.length < 2) { setResults([]); return; }
+    if (query.length < 2) { setResults([]); setLoading(false); return; }
     const t = setTimeout(async () => {
       setLoading(true);
       try {
         const res = await fetchPlayers({ search: query, pageSize: 12, page: 0 });
         setResults(res.data || []);
-      } catch { setResults([]); }
-      finally { setLoading(false); }
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
     }, 300);
     return () => clearTimeout(t);
   }, [query]);
@@ -31,6 +34,8 @@ function PlayerSearch({ slot, onSelect, disabled }) {
     setOpen(false);
   };
 
+  const showDropdown = open && query.length >= 2;
+
   return (
     <div className={styles.searchWrap}>
       <input
@@ -38,21 +43,42 @@ function PlayerSearch({ slot, onSelect, disabled }) {
         placeholder={`Search player ${slot}…`}
         value={query}
         disabled={disabled}
+        autoComplete="off"
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => setOpen(false)}
       />
-      {open && (loading || results.length > 0) && (
-        <div className={styles.dropdown}>
+      {showDropdown && (
+        /* onMouseDown + e.preventDefault() on the container stops the input
+           from losing focus before the item's onClick fires — fixes the
+           blur-before-click race condition that swallowed selections. */
+        <div
+          className={styles.dropdown}
+          onMouseDown={e => e.preventDefault()}
+        >
           {loading && <div className={styles.dropLoading}>Searching…</div>}
-          {results.map((p, i) => (
-            <div key={p._id || i} className={styles.dropItem} onMouseDown={() => pick(p)}>
-              <span className={styles.dropName}>{p.player_name}</span>
-              <span className={styles.dropMeta}>
-                {p.position} · {p.team} · {p.season}
-              </span>
-            </div>
-          ))}
+          {!loading && results.length === 0 && (
+            <div className={styles.dropEmpty}>No players found for "{query}"</div>
+          )}
+          {results.map((p, i) => {
+            const meta = [
+              p.position || null,
+              p.team     || null,
+              p.league   ? p.league.toUpperCase() : null,
+              p.season   || null,
+            ].filter(Boolean).join(' · ');
+
+            return (
+              <div
+                key={p._id || i}
+                className={styles.dropItem}
+                onClick={() => pick(p)}
+              >
+                <span className={styles.dropName}>{p.player_name || '—'}</span>
+                {meta && <span className={styles.dropMeta}>{meta}</span>}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

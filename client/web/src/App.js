@@ -5,6 +5,8 @@ import PlayerTable from './components/PlayerTable';
 import PlayerCompare from './components/PlayerCompare';
 import QueryDisplay from './components/QueryDisplay';
 import TeamView from './components/TeamView';
+import LeaguesView from './components/LeaguesView';
+import PlayerProfileDrawer from './components/PlayerProfileDrawer';
 import useDebounce from './hooks/useDebounce';
 import { fetchFilters, fetchPlayers, fetchTeamFilters, fetchTeams } from './api';
 import styles from './App.module.css';
@@ -45,8 +47,9 @@ export default function App() {
   const [metrics, setMetrics] = useState({});
 
   // ── UI state ──
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState(null);
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState(null);
+  const [profilePlayer, setProfilePlayer] = useState(null); // name string or null
 
   const debouncedPlayerSearch = useDebounce(playerFilters.search, 400);
   const debouncedTeamSearch   = useDebounce(teamFilters.search,   400);
@@ -58,8 +61,13 @@ export default function App() {
   }, []);
 
   // ── Data loader ──────────────────────────────────────────────────────────
+  // IMPORTANT: playerFilters / teamFilters objects are NOT listed as deps.
+  // Listing the whole object causes loadData to rebuild on every keystroke,
+  // firing a fetch with the stale debouncedSearch value before the debounce
+  // settles — resulting in a flash of full data followed by the real results.
+  // Instead, each primitive value is listed individually, and search always
+  // goes through its debounced counterpart.
   const loadData = useCallback(async () => {
-    // Players view and Dashboard share the same player data
     if (activeView === 'teams') {
       setLoading(true);
       setError(null);
@@ -80,7 +88,6 @@ export default function App() {
       return;
     }
 
-    // Dashboard and Players both need player data
     if (activeView === 'dashboard' || activeView === 'players') {
       setLoading(true);
       setError(null);
@@ -90,7 +97,7 @@ export default function App() {
           season:    playerFilters.season,
           league:    playerFilters.league,
           position:  playerFilters.position,
-          search:    debouncedPlayerSearch,
+          search:    debouncedPlayerSearch,   // ← debounced only, never raw
           page:      playerFilters.page,
           pageSize:  50,
           sortBy:    playerFilters.sortBy,
@@ -103,11 +110,25 @@ export default function App() {
       } catch (err) { setError(err.message); }
       finally       { setLoading(false); }
     }
-    // "compare" and "leagues" views don't need a data load here
   }, [
     activeView,
-    playerFilters, debouncedPlayerSearch,
-    teamFilters,   debouncedTeamSearch,
+    // Player filter primitives — search intentionally excluded (uses debounced below)
+    playerFilters.birthYear,
+    playerFilters.season,
+    playerFilters.league,
+    playerFilters.position,
+    playerFilters.page,
+    playerFilters.sortBy,
+    playerFilters.sortDir,
+    debouncedPlayerSearch,   // only fires after the 400 ms debounce settles
+    // Team filter primitives
+    teamFilters.athlete,
+    teamFilters.coach,
+    teamFilters.league,
+    teamFilters.page,
+    teamFilters.sortBy,
+    teamFilters.sortDir,
+    debouncedTeamSearch,
   ]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -172,12 +193,7 @@ export default function App() {
         );
 
       case 'leagues':
-        return (
-          <div className={styles.emptyView}>
-            <h2>League Overviews</h2>
-            <p>League standing filters and distribution matrices go here.</p>
-          </div>
-        );
+        return <LeaguesView />;
 
       default:
         return null;

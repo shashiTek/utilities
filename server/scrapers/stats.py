@@ -5,13 +5,6 @@ StatsScraper
 Reads the `teams` collection to build a player lookup, groups players by (league_slug, season_slug),
 scrapes the EP league stats page (the only page with server-side rendered stat tables),
 matches rows back to players by their /player/ href, and upserts into `stats`.
-
-Source : teams + players collections
-Target : stats collection
-
-WHY THE LEAGUE PAGE?
-/player/{id}/{slug}/stats → stats loaded CLIENT-SIDE via Apollo/GraphQL.
-/league/{slug}/stats/{yr} → stats SERVER-SIDE rendered in real <table>.
 """
 
 from __future__ import annotations
@@ -44,7 +37,7 @@ class StatsRepository(MongoRepository):
     collection_name = settings.stats_collection
 
 # ---------------------------------------------------------------------------
-# HTML table parser (adapted from TopDownHockey EP scraper)
+# HTML table parser
 # ---------------------------------------------------------------------------
 class LeagueTableParser:
     """Parses the EP league stats HTML page into raw stat rows."""
@@ -71,10 +64,13 @@ class LeagueTableParser:
         trs = table.find_all("tr")
         if not trs:
             return [], []
+        
+        # Use first tr element to securely isolate the collection columns
         headers = [th.get_text(strip=True) for th in trs[0].find_all("th")]
         if not headers:
             return [], []
         ncols = len(headers)
+        
         rows = [
             [td.get_text(strip=True) for td in tr.find_all("td")]
             for tr in trs[1:]
@@ -93,14 +89,7 @@ class LeagueTableParser:
         return links
 
     @classmethod
-    def parse(
-        cls, html: str, kind: str
-    ) -> list[dict]:
-        """
-        Parse one HTML page and return a list of raw row dicts:
-        { player_url, team_name, stats_dict }
-        Returns empty list if no matching table is found (signals end of pagination).
-        """
+    def parse(cls, html: str, kind: str) -> list[dict]:
         soup = BeautifulSoup(html, "html.parser")
         table = cls.find_stats_table(soup, kind)
         if table is None:
@@ -108,7 +97,6 @@ class LeagueTableParser:
         headers, data_rows = cls.table_to_rows(table)
         player_links = cls.extract_player_links(table)
 
-        # Drop EP separator rows (empty '#' column)
         hash_col = "#" if "#" in headers else None
         valid_rows, valid_links = [], []
         link_cursor = 0
@@ -144,42 +132,28 @@ class LeagueTableParser:
 # StatsScraper
 # ---------------------------------------------------------------------------
 class StatsScraper(BaseScraper):
-    """
-    Scrapes EP league stats pages and populates the stats collection.
-    Usage::
-        scraper = StatsScraper()
-        total = scraper.run()
-    """
     def __init__(self) -> None:
         super().__init__(repo=StatsRepository())
         self._teams_repo = TeamsRepository()
         self._players_repo = PlayersRepository()
         self._parser = LeagueTableParser()
 
-    # ------------------------------------------------------------------
     def run(self) -> int:
-        # Ensure compound unique index exists
         with self.repo:
             self.repo.ensure_index(
                 [("player_url", 1), ("season", 1), ("league", 1), ("stat_type", 1)],
                 unique=True,
             )
 
-        # Step 1: Build lookup maps from MongoDB
-        with self._teams_repo:
-            player_lookup = self._build_player_lookup()
+        player_lookup = self._build_player_lookup()
+        
         with self._players_repo:
             bio_lookup = self._build_bio_lookup()
 
-        self.log.info(
-            "%d unique player URLs found across all teams.", len(player_lookup)
-        )
-
-        # Step 2: Group by (league_slug, season_slug)
+        self.log.info("%d unique player URLs found across all teams.", len(player_lookup))
         groups = self._group_by_league_season(player_lookup)
         self.log.info("%d (league, season) combos to scrape.", len(groups))
 
-        # Step 3: Scrape each combo
         total_upserted = 0
         with self.repo:
             with self.http:
@@ -187,84 +161,90 @@ class StatsScraper(BaseScraper):
                     sorted(groups.items()), start=1
                 ):
                     upserted = self._scrape_combo(
-                        combo_num,
-                        len(groups),
-                        league_slug,
-                        season_slug,
-                        group_meta,
-                        player_lookup,
-                        bio_lookup,
+                        combo_num, len(groups), league_slug, season_slug, group_meta, player_lookup, bio_lookup
                     )
                     total_upserted += upserted
-
-                    # Polite delay between league combos
-                    delay = random.uniform(2.0, 4.0)
-                    self.log.debug("Sleeping %.1fs before next combo.", delay)
-                    time.sleep(delay)
+                    time.sleep(random.uniform(2.0, 4.0))
 
         self.log.info("StatsScraper finished. Total rows upserted: %d", total_upserted)
         return total_upserted
 
-    # ------------------------------------------------------------------
-    # Lookup builders
-    # ------------------------------------------------------------------
     def _build_player_lookup(self) -> dict[str, dict]:
+        EP_BASE = self.cfg.ep_base_url
         """
         Build: normalised_player_url → { player_name, team_name, team_doc_id, league_slug, season_slug, position_hint }
         """
+        player_db_cache = {}
+        
+        with self._players_repo:
+            for p_doc in self._players_repo.find({"url": {"$exists": True}}):
+                p_url = p_doc.get("url", "")
+                if p_url:
+                    # Fix: Use standard normalise_url utility for cache keys
+                    norm_p_url = normalise_url(p_url)
+                    player_db_cache[norm_p_url] = p_doc
+
         lookup: dict[str, dict] = {}
-        for team_doc in self._teams_repo.find({"athlete": {"$exists": True}}):
-            team_name = team_doc.get("name", "Unknown Team")
-            team_doc_id = team_doc.get("_id")
-            year = team_doc.get("year")
-            member_of = team_doc.get("memberOf") or {}
-            league_name = (
-                member_of.get("name", "") if isinstance(member_of, dict) else ""
-            )
+        
+        with self._teams_repo:
+            for team_doc in self._teams_repo.find({"athlete": {"$exists": True}}):
+                team_name = team_doc.get("name", "Unknown Team")
+                team_doc_id = team_doc.get("_id")
+                year = team_doc.get("year")
+                member_of = team_doc.get("memberOf") or {}
+                league_slug = league_name_to_slug(member_of.get("name", "") if isinstance(member_of, dict) else "")
+                season_slug = year_to_season(year) if year else None
 
-            athletes = team_doc.get("athlete") or []
-            if isinstance(athletes, dict):
-                athletes = [athletes]
+                athletes = team_doc.get("athlete") or []
+                if isinstance(athletes, dict):
+                    athletes = [athletes]
 
-            for athlete in athletes:
-                if not isinstance(athlete, dict):
-                    continue
-                raw_url = athlete.get("url", "").rstrip("/")
-                if not raw_url:
-                    continue
-                norm_url = normalise_url(raw_url)
-                
-                # Hardened position matching for variations like 'Goalie', 'Goaltender', 'G'
-                at_lower = athlete.get("@type", "").lower()
-                position = (
-                    "G" if any(x in at_lower for x in ["goal", "gk", "g"]) else "F/D"
-                )
+                for athlete in athletes:
+                    if not isinstance(athlete, dict):
+                        continue
+                    raw_url = athlete.get("url", "").rstrip("/")
+                    if not raw_url:
+                        continue
+                    norm_url = raw_url
 
-                lookup[norm_url] = {
-                    "player_name": athlete.get("name", "Unknown"),
-                    "team_name": team_name,
-                    "team_doc_id": team_doc_id,
-                    "league_slug": league_name_to_slug(league_name),
-                    "season_slug": year_to_season(year) if year else None,
-                    "position_hint": position,
-                }
+                    # Default fallback position
+                    position_hint = "F/D" 
+                    
+                    if norm_url in player_db_cache:
+                        p_doc = player_db_cache[norm_url]
+                        know_about = p_doc.get("knowsAbout")
+                        print(f"Player {athlete.get('name', 'Unknown')} has knowsAbout: {know_about}")
+                        # FIX 1: Explicitly target index 1 to isolate position names
+                        if isinstance(know_about, list) and len(know_about) > 1:
+                            type_hint = know_about[1]
+                            if type_hint == "Goalkeeper" or type_hint == "Goaltender":
+                                position_hint = "G"
+                                print(f"Identified goalie position for player {athlete.get('name', 'Unknown')}")
+                            elif type_hint == "Defender":
+                                position_hint = "D"
+                            elif type_hint == "Forward":
+                                position_hint = "F"
+                            elif type_hint == "Center":
+                                position_hint = "C"
+
+                    lookup[norm_url] = {
+                        "player_name": athlete.get("name", "Unknown"),
+                        "team_name": team_name,
+                        "team_doc_id": team_doc_id,
+                        "league_slug": league_slug,
+                        "season_slug": season_slug,
+                        "position_hint": position_hint,
+                    }
         return lookup
 
     def _build_bio_lookup(self) -> dict[str, dict]:
-        """Build: normalised_player_url → players collection doc."""
         lookup: dict[str, dict] = {}
-        for pdoc in self._players_repo.find(
-            {"url": {"$exists": True}},
-            {"url": 1, "name": 1, "_id": 1},
-        ):
+        for pdoc in self._players_repo.find({"url": {"$exists": True}}, {"url": 1, "name": 1, "_id": 1}):
             norm = normalise_url(pdoc.get("url", ""))
             if norm:
                 lookup[norm] = pdoc
         return lookup
 
-    # ------------------------------------------------------------------
-    # Grouping
-    # ------------------------------------------------------------------
     @staticmethod
     def _group_by_league_season(player_lookup: dict) -> dict[tuple, dict]:
         groups: dict[tuple, dict] = {}
@@ -281,112 +261,57 @@ class StatsScraper(BaseScraper):
                     "has_skater": False,
                 }
             groups[key]["player_urls"].add(norm_url)
+            # Enables Goalie scraping branches dynamically if any single goalie belongs to the group
             if meta["position_hint"] == "G":
+                print(f"Processing player {meta['player_name']} in league {ls} season {ss} with position hint {meta['position_hint']}")
                 groups[key]["has_goalie"] = True
             else:
                 groups[key]["has_skater"] = True
         return groups
 
-    # ------------------------------------------------------------------
-    # Scraping one league/season combo
-    # ------------------------------------------------------------------
-    def _scrape_combo(
-        self,
-        combo_num: int,
-        total_combos: int,
-        league_slug: str,
-        season_slug: str,
-        group_meta: dict,
-        player_lookup: dict,
-        bio_lookup: dict,
-    ) -> int:
+    def _scrape_combo(self, combo_num: int, total_combos: int, league_slug: str, season_slug: str, group_meta: dict, player_lookup: dict, bio_lookup: dict) -> int:
         group_urls = group_meta["player_urls"]
-
-        # Skip if all players already stored
-        already_done = sum(
-            1 for u in group_urls
-            if self.repo.count(
-                {"player_url": u, "season": season_slug, "league": league_slug}
-            ) > 0
-        )
-        if already_done == len(group_urls):
-            self.log.info(
-                "[%d/%d] SKIP (all %d done): %s %s",
-                combo_num,
-                total_combos,
-                len(group_urls),
-                league_slug,
-                season_slug,
-            )
-            return 0
-
         kinds = []
         if group_meta["has_goalie"]:
             kinds.append("goalie")
         if group_meta["has_skater"]:
             kinds.append("skater")
 
-        self.log.info(
-            "[%d/%d] %s %s — %d players — scraping %s",
-            combo_num,
-            total_combos,
-            league_slug.upper(),
-            season_slug,
-            len(group_urls),
-            kinds,
-        )
+        self.log.info("[%d/%d] %s %s — %d players — scraping %s", combo_num, total_combos, league_slug.upper(), season_slug, len(group_urls), kinds)
 
         total = 0
         for kind in kinds:
-            total += self._scrape_kind(
-                league_slug, season_slug, kind, player_lookup, bio_lookup
-            )
+            total += self._scrape_kind(league_slug, season_slug, kind, player_lookup, bio_lookup)
         return total
 
-    def _scrape_kind(
-        self,
-        league_slug: str,
-        season_slug: str,
-        kind: str,
-        player_lookup: dict,
-        bio_lookup: dict,
-    ) -> int:
-        # Fixed: Explicitly branch on clean query parameter strings
+    def _scrape_kind(self, league_slug: str, season_slug: str, kind: str, player_lookup: dict, bio_lookup: dict) -> int:
         if kind == "goalie":
             base = f"{self.cfg.ep_base_url}/league/{league_slug}/stats/{season_slug}?tab=goalies&page="
         else:
             base = f"{self.cfg.ep_base_url}/league/{league_slug}/stats/{season_slug}?page="
 
         self.log.info("  Fetching %s stats …", kind)
-        upserted = unmatched = 0
+        upserted = 0
 
         for page_num in range(1, 99):
             url = base + str(page_num)
             html = self.http.get(url)
             if not html:
-                self.log.debug("  No response on page %d — stopping.", page_num)
                 break
 
             rows = self._parser.parse(html, kind)
             if not rows:
-                self.log.debug("  No %s table on page %d — stopping.", kind, page_num)
                 break
-
-            self.log.debug("  Page %d: %d rows", page_num, len(rows))
 
             for raw_row in rows:
                 player_url = normalise_url(raw_row.get("player_url") or "")
-                if not player_url:
-                    unmatched += 1
-                    continue
-
                 meta = player_lookup.get(player_url)
                 if not meta:
-                    unmatched += 1
                     continue
 
                 bio = bio_lookup.get(player_url, {})
 
+                # FIX 2: Bind the precise lookup field configuration ("G", "D", "F") to the document object
                 stat_row = StatRow(
                     player_url=player_url,
                     player_name=meta["player_name"],
@@ -394,7 +319,7 @@ class StatsScraper(BaseScraper):
                     season=season_slug,
                     league=league_slug,
                     team=raw_row.get("team_name") or meta["team_name"],
-                    position="G" if kind == "goalie" else "F/D",
+                    position=meta["position_hint"], 
                     stat_type="REGULAR_SEASON",
                     stats=raw_row.get("stats", {}),
                     source_team_id=meta["team_doc_id"],
@@ -406,8 +331,4 @@ class StatsScraper(BaseScraper):
                 upserted += 1
 
             time.sleep(random.uniform(1.5, 3.0))
-
-        self.log.info(
-            "  %s: upserted=%d unmatched=%d", kind.capitalize(), upserted, unmatched
-        )
         return upserted

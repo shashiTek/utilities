@@ -218,12 +218,12 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--bg-card);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
-  z-index: 50;
-  max-height: 260px;
+  background: var(--bg-card, #fff);
+  border: 1.5px solid var(--border, #e5e5e5);
+  border-radius: var(--radius, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 999;
+  max-height: 280px;
   overflow-y: auto;
 }
 
@@ -247,6 +247,13 @@
 .dropItem:last-child { border-bottom: none; }
 
 .dropItem:hover { background: var(--bg-surface); }
+
+.dropEmpty {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
 
 .dropName {
   font-size: 13px;

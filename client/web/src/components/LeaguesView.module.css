@@ -1,0 +1,463 @@
+/* ─── Wrapper ─────────────────────────────────────────────────────────────── */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ─── Controls ────────────────────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  flex-wrap: wrap;
+}
+
+.controlGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.select {
+  height: 36px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 180px;
+  transition: border-color 0.15s;
+}
+
+.select:focus { outline: none; border-color: var(--accent); }
+.select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.searchInput {
+  height: 36px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 13px;
+  min-width: 160px;
+  transition: border-color 0.15s;
+}
+
+.searchInput:focus { outline: none; border-color: var(--accent); }
+.searchInput::placeholder { color: var(--text-muted); }
+
+.meta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  align-self: center;
+}
+
+.metaRegion {
+  color: #2563EB;
+  font-weight: 700;
+}
+
+/* ─── Summary cards ───────────────────────────────────────────────────────── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.card {
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  border: 1.5px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cardOldest  { background: rgba(192,57,43,0.06); border-color: rgba(192,57,43,0.2); }
+.cardLeague  { background: var(--bg-card); border-color: var(--border); }
+.cardYoungest { background: rgba(26,107,74,0.06); border-color: rgba(26,107,74,0.2); }
+
+.cardBadge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.cardOldest  .cardBadge  { color: #C0392B; }
+.cardYoungest .cardBadge { color: #1A6B4A; }
+
+.cardTeam {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardStat {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.cardOldest  .cardStat { color: #C0392B; }
+.cardYoungest .cardStat { color: #1A6B4A; }
+
+.cardSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+/* ─── Shared chart wrapper ────────────────────────────────────────────────── */
+.chartWrap {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px 20px;
+  overflow: hidden;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chartTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chartSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.chartLegend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.legendDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ─── Tooltip ─────────────────────────────────────────────────────────────── */
+.tooltip {
+  background: var(--bg-card, #fff);
+  border: 1.5px solid var(--border, #e5e5e5);
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.10);
+  min-width: 190px;
+}
+
+.tooltipTeam {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #111);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border, #eee);
+}
+
+.tooltipRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-muted, #777);
+  margin-bottom: 3px;
+}
+
+.tooltipRow strong {
+  color: var(--text, #111);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Origins row: region list + state panel ──────────────────────────────── */
+.originsRow {
+  display: grid;
+  grid-template-columns: 1fr 1.8fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ─── Region selector list ────────────────────────────────────────────────── */
+.regionList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.regionRow {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.regionRow:hover {
+  background: rgba(0,0,0,0.03);
+  border-color: var(--border);
+}
+
+.regionRowActive {
+  border-color: #2563EB !important;
+  background: rgba(37,99,235,0.05) !important;
+}
+
+.regionRowTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.regionName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.regionCount {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.regionCountActive {
+  color: #2563EB;
+}
+
+.regionBarTrack {
+  height: 4px;
+  background: rgba(0,0,0,0.07);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.regionBarFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.regionPct {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ─── State panel empty state ─────────────────────────────────────────────── */
+.stateEmptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 220px;
+  padding: 40px 24px;
+}
+
+.stateEmptyIcon {
+  font-size: 28px;
+  opacity: 0.25;
+}
+
+.stateEmptyTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.stateEmptyText {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 240px;
+  line-height: 1.5;
+}
+
+/* ─── Drilldown chart header ──────────────────────────────────────────────── */
+.drilldownHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.regionTag {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563EB;
+  background: rgba(37,99,235,0.08);
+  border: 1px solid rgba(37,99,235,0.22);
+  border-radius: 5px;
+  padding: 2px 8px;
+}
+
+.clearBtn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.clearBtn:hover { border-color: #C0392B; color: #C0392B; }
+
+/* ─── State highlight banner ──────────────────────────────────────────────── */
+.stateHighlight {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 16px;
+  background: rgba(37,99,235,0.05);
+  border: 1px solid rgba(37,99,235,0.16);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.stateHighlightLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.stateHighlightLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #2563EB;
+}
+
+.stateHighlightName {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stateHighlightStat {
+  font-size: 26px;
+  font-weight: 800;
+  color: #E8472A;
+  font-variant-numeric: tabular-nums;
+}
+
+.stateHighlightStatBlue {
+  color: #2563EB;
+}
+
+.stateHighlightUnit {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.stateHighlightPct {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ─── Overflow note ───────────────────────────────────────────────────────── */
+.stateOverflow {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+
+/* ─── Empty / error states ────────────────────────────────────────────────── */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 24px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.emptyIcon { font-size: 32px; opacity: 0.25; }
+.emptyText { font-size: 13px; color: var(--text-muted); }
+
+.errorBox {
+  padding: 14px 18px;
+  background: rgba(192,57,43,0.06);
+  border: 1.5px solid rgba(192,57,43,0.25);
+  border-radius: var(--radius);
+  color: #C0392B;
+  font-size: 13px;
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .originsRow { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .cards { grid-template-columns: 1fr; }
+  .controls { flex-direction: column; align-items: stretch; }
+  .meta { margin-left: 0; }
+}
