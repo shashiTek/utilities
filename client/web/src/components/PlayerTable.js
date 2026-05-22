@@ -1,5 +1,44 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useCallback } from 'react';
 import styles from './PlayerTable.module.css';
+
+// ─── CSV export ────────────────────────────────────────────────────────────────
+function exportCSV(data, cols) {
+  const headers = cols.map(c => c.label);
+  const rows = data.map(row => cols.map(c => {
+    const s = row.stats || {};
+    let v;
+    switch (c.key) {
+      case 'player_name': v = row.player_name; break;
+      case 'position':    v = row.position;    break;
+      case 'league':      v = (row.league || '').toUpperCase(); break;
+      case 'team':        v = row.team;        break;
+      case 'season':      v = row.season;      break;
+      case 'birthYear':   v = row.birthYear;   break;
+      case 'gp':  v = s.gp;         break;
+      case 'g':   v = s.g;          break;
+      case 'a':   v = s.a;          break;
+      case 'pts': v = s.pts;        break;
+      case 'pm':  v = s.plus_minus; break;
+      case 'pim': v = s.pim;        break;
+      case 'ppg': v = s.ppg;        break;
+      case 'w':   v = s.w;          break;
+      case 'l':   v = s.l;          break;
+      case 'ot':  v = s.ot;         break;
+      case 'gaa': v = s.gaa;        break;
+      case 'svp': v = s.sv_pct;     break;
+      case 'so':  v = s.so;         break;
+      default:    v = row[c.key];
+    }
+    const str = v == null ? '' : String(v);
+    return str.includes(',') ? `"${str}"` : str;
+  }));
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'players.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 const fmt    = (v, dec = 1) => (v == null ? '—' : typeof v === 'number' ? v.toFixed(dec) : v);
@@ -122,8 +161,15 @@ function computeMaxes(data, statCols) {
 // ─── Component ─────────────────────────────────────────────────────────────────
 export default function PlayerTable({
   data, loading, total, page, pageSize, onSort, sortBy, sortDir, onPage,
-  currentPositionFilter = 'ALL',
+  currentPositionFilter = 'ALL', onPlayerClick,
 }) {
+  const wrapRef = useRef(null);
+
+  // Scroll table back to top on page change and expose a stable handler
+  const handlePage = useCallback((p) => {
+    onPage(p);
+    wrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [onPage]);
 
   const cols = useMemo(() => {
     const f = String(currentPositionFilter).trim().toUpperCase();
@@ -142,7 +188,7 @@ export default function PlayerTable({
   const thClick    = (col) => onSort(col.sortPath || col.key);
 
   return (
-    <div className={styles.wrap}>
+    <div className={styles.wrap} ref={wrapRef}>
       {/* ── Header bar ── */}
       <div className={styles.header}>
         <span className={styles.count}>
@@ -152,6 +198,15 @@ export default function PlayerTable({
           {total > 0 &&
             `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} of ${total}`}
         </span>
+        {data.length > 0 && (
+          <button
+            className={styles.exportBtn}
+            onClick={() => exportCSV(data, cols)}
+            title="Export current page to CSV"
+          >
+            ↓ Export CSV
+          </button>
+        )}
       </div>
 
       {/* ── Scrollable table ── */}
@@ -199,7 +254,19 @@ export default function PlayerTable({
 
                     // ── Non-numeric identity cells ──────────────────────────
                     if (ck === 'player_name')
-                      return <td key={ck} className={styles.name}>{row.player_name}</td>;
+                      return (
+                        <td key={ck} className={styles.name}>
+                          {onPlayerClick ? (
+                            <button
+                              className={styles.nameBtn}
+                              onClick={() => onPlayerClick(row.player_name)}
+                              title={`View ${row.player_name}'s profile`}
+                            >
+                              {row.player_name}
+                            </button>
+                          ) : row.player_name}
+                        </td>
+                      );
                     if (ck === 'position')
                       return <td key={ck}><PosBadge pos={row.position} /></td>;
                     if (ck === 'league')
@@ -262,11 +329,11 @@ export default function PlayerTable({
       {/* ── Pagination ── */}
       {totalPages > 1 && (
         <div className={styles.pager}>
-          <button onClick={() => onPage(0)}            disabled={page === 0}>«</button>
-          <button onClick={() => onPage(page - 1)}     disabled={page === 0}>‹ Prev</button>
-          <span>{page + 1} / {totalPages}</span>
-          <button onClick={() => onPage(page + 1)}     disabled={page >= totalPages - 1}>Next ›</button>
-          <button onClick={() => onPage(totalPages - 1)} disabled={page >= totalPages - 1}>»</button>
+          <button onClick={() => handlePage(0)}              disabled={page === 0}>«</button>
+          <button onClick={() => handlePage(page - 1)}       disabled={page === 0}>‹ Prev</button>
+          <span className={styles.pageCounter}>{page + 1} / {totalPages}</span>
+          <button onClick={() => handlePage(page + 1)}       disabled={page >= totalPages - 1}>Next ›</button>
+          <button onClick={() => handlePage(totalPages - 1)} disabled={page >= totalPages - 1}>»</button>
         </div>
       )}
     </div>

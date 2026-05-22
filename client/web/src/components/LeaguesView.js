@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, LabelList,
 } from 'recharts';
-import { fetchPlayers, fetchFilters } from '../api';
+import { fetchPlayers, fetchFilters, fetchTeamRosterOrigins } from '../api';
 import styles from './LeaguesView.module.css';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -108,7 +108,72 @@ function buildTeamStats(players) {
     .sort((a, b) => a.avgBY - b.avgBY);
 }
 
-// ── Age chart tooltip ──────────────────────────────────────────────────────────
+// ── Roster-origins helpers ─────────────────────────────────────────────────────
+
+/**
+ * Extract state from a player's birth_place field returned by the
+ * /api/league/team-roster-origins endpoint.
+ * birth_place may be { name: "City, ST, COUNTRY" } or a plain string.
+ */
+function extractStateFromBio(player) {
+  const raw = player.birth_place;
+  const str =
+    (raw && typeof raw === 'object' ? raw.name : null) ||
+    (typeof raw === 'string' ? raw : '') ||
+    '';
+  if (!str) return null;
+  const parts = str.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length >= 3) return parts[parts.length - 2] || null;
+  if (parts.length === 2) return parts[1] || null;
+  return null;
+}
+
+/** Count players per state for a single team's roster */
+function buildRosterStateStats(players) {
+  const map = {};
+  for (const p of players) {
+    const st = extractStateFromBio(p);
+    if (!st) continue;
+    map[st] = (map[st] || 0) + 1;
+  }
+  return Object.entries(map)
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** Extract birth year (4-digit int) from a bio birth_date string like "2007-03-15" */
+function parseBirthYear(birthDate) {
+  if (!birthDate || typeof birthDate !== 'string') return null;
+  const yr = parseInt(birthDate.slice(0, 4), 10);
+  return isNaN(yr) || yr < 1980 ? null : yr;
+}
+
+/** Players from a specific state, sorted by birth year asc (oldest first) */
+function getPlayersByState(players, state) {
+  return players
+    .filter(p => extractStateFromBio(p) === state)
+    .map(p => ({ ...p, birthYear: parseBirthYear(p.birth_date) }))
+    .sort((a, b) => (a.birthYear || 9999) - (b.birthYear || 9999));
+}
+
+/** Count players by their prior (youth) team */
+function buildYouthTeamStats(players) {
+  const homegrown = { label: 'Homegrown', count: 0, isHomegrown: true };
+  const map = {};
+  for (const p of players) {
+    if (!p.youth_team) { homegrown.count++; continue; }
+    const key = p.youth_team;
+    if (!map[key]) map[key] = { label: p.youth_team, league: p.youth_league, count: 0 };
+    map[key].count++;
+  }
+  const list = Object.values(map).sort((a, b) => b.count - a.count);
+  if (homegrown.count > 0) list.push(homegrown);
+  return list;
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+// Age chart tooltip
 function AgeTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -124,10 +189,10 @@ function AgeTooltip({ active, payload }) {
   );
 }
 
-// ── Region list row (pure HTML — reliable click) ───────────────────────────────
+// Region list row (pure HTML — reliable click)
 function RegionRow({ region, count, pct, maxCount, selected, onClick }) {
   const fillPct = maxCount > 0 ? (count / maxCount) * 100 : 0;
-  const isTop   = !selected && pct >= 50; // highlight top region when none selected
+  const isTop   = !selected && pct >= 50;
   return (
     <button
       type="button"
@@ -152,6 +217,71 @@ function RegionRow({ region, count, pct, maxCount, selected, onClick }) {
   );
 }
 
+// Team list row for roster-origins panel
+function TeamRow({ team, count, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`${styles.teamListRow} ${selected ? styles.teamListRowActive : ''}`}
+      onClick={onClick}
+    >
+      <span className={styles.teamListName}>{team}</span>
+      <span className={`${styles.teamListCount} ${selected ? styles.teamListCountActive : ''}`}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+// Horizontal mini-bar list (state or youth-team breakdown)
+// onItemClick(item) — optional; when provided, rows become clickable buttons
+function BarList({ items, maxCount, title, colorFn, emptyText, onItemClick, selectedLabel }) {
+  if (!items.length) {
+    return (
+      <div className={styles.barListSection}>
+        <div className={styles.barListTitle}>{title}</div>
+        <div className={styles.barListEmpty}>{emptyText || 'No data'}</div>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.barListSection}>
+      <div className={styles.barListTitle}>{title}</div>
+      {items.map((item, i) => {
+        const pct       = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
+        const isActive  = selectedLabel === item.label;
+        const clickable = !!onItemClick && !item.isHomegrown;
+        const RowTag    = clickable ? 'button' : 'div';
+        return (
+          <RowTag
+            key={item.label}
+            type={clickable ? 'button' : undefined}
+            className={`${styles.barListRow} ${clickable ? styles.barListRowClickable : ''} ${isActive ? styles.barListRowActive : ''}`}
+            onClick={clickable ? () => onItemClick(item) : undefined}
+          >
+            <div className={styles.barListMeta}>
+              <span className={styles.barListLabel}>{item.label}</span>
+              {item.league && (
+                <span className={styles.barListSub}>{item.league.toUpperCase()}</span>
+              )}
+              {item.isHomegrown && (
+                <span className={styles.barListHomegrown}>no prior record</span>
+              )}
+            </div>
+            <div className={styles.barListTrack}>
+              <div
+                className={styles.barListFill}
+                style={{ width: `${pct}%`, background: isActive ? '#2563EB' : colorFn(i, item) }}
+              />
+            </div>
+            <span className={styles.barListCount}>{item.count}</span>
+          </RowTag>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function LeaguesView() {
   const [filterOptions, setFilterOptions] = useState({ leagues: [], seasons: [] });
@@ -164,10 +294,17 @@ export default function LeaguesView() {
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [regionSearch,   setRegionSearch]   = useState('');
 
+  // Roster-origins state
+  const [rosterData,         setRosterData]         = useState([]);   // [{team, player_count, players[]}]
+  const [rosterLoading,      setRosterLoading]      = useState(false);
+  const [selectedTeam,       setSelectedTeam]       = useState(null); // team name string
+  const [selectedRosterState, setSelectedRosterState] = useState(null); // state label string
+
   useEffect(() => {
     fetchFilters().then(setFilterOptions).catch(() => {});
   }, []);
 
+  // Fetch player list (for region/state/age charts)
   useEffect(() => {
     if (!league) { setPlayers([]); return; }
     let cancelled = false;
@@ -179,10 +316,24 @@ export default function LeaguesView() {
     return () => { cancelled = true; };
   }, [league, season]);
 
-  // Reset drilldown when league/season changes
+  // Fetch roster-origins data (for the new team-breakdown section)
+  useEffect(() => {
+    if (!league) { setRosterData([]); return; }
+    let cancelled = false;
+    setRosterLoading(true);
+    fetchTeamRosterOrigins(league, season)
+      .then(data => { if (!cancelled) setRosterData(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!cancelled) setRosterData([]); })
+      .finally(() => { if (!cancelled) setRosterLoading(false); });
+    return () => { cancelled = true; };
+  }, [league, season]);
+
+  // Reset drilldowns when league/season changes
   useEffect(() => {
     setSelectedRegion(null);
     setRegionSearch('');
+    setSelectedTeam(null);
+    setSelectedRosterState(null);
   }, [players]);
 
   const teamStats   = useMemo(() => buildTeamStats(players),   [players]);
@@ -199,6 +350,30 @@ export default function LeaguesView() {
     [players, selectedRegion]
   );
 
+  // Selected team's player list (from rosterData)
+  const selectedTeamPlayers = useMemo(() => {
+    if (!selectedTeam) return [];
+    return rosterData.find(r => r.team === selectedTeam)?.players || [];
+  }, [rosterData, selectedTeam]);
+
+  // Clear state selection whenever the team changes
+  useEffect(() => { setSelectedRosterState(null); }, [selectedTeam]);
+
+  const rosterStateStats = useMemo(
+    () => buildRosterStateStats(selectedTeamPlayers),
+    [selectedTeamPlayers]
+  );
+
+  const youthTeamStats = useMemo(
+    () => buildYouthTeamStats(selectedTeamPlayers),
+    [selectedTeamPlayers]
+  );
+
+  const statePlayerList = useMemo(
+    () => selectedRosterState ? getPlayersByState(selectedTeamPlayers, selectedRosterState) : [],
+    [selectedTeamPlayers, selectedRosterState]
+  );
+
   const oldestTeam   = teamStats[0]  || null;
   const youngestTeam = teamStats[teamStats.length - 1] || null;
   const avgLeagueAge = teamStats.length
@@ -206,7 +381,7 @@ export default function LeaguesView() {
   const leagueAvgBY  = teamStats.length
     ? round1(teamStats.reduce((s, t) => s + t.avgBY, 0) / teamStats.length) : null;
 
-  const getColor = (team) => {
+  const getAgeColor = (team) => {
     if (team === oldestTeam?.team)   return '#C0392B';
     if (team === youngestTeam?.team) return '#1A6B4A';
     return '#6B8CAE';
@@ -216,6 +391,12 @@ export default function LeaguesView() {
   const stateChartHeight = Math.max(260, Math.min(stateStats.length, 20) * 34);
   const maxRegionCount   = filteredRegions[0]?.count || 1;
   const totalPlayers     = players.length;
+
+  const maxRosterState  = rosterStateStats[0]?.count  || 1;
+  const maxYouthTeam    = youthTeamStats[0]?.count    || 1;
+
+  const stateColor   = (i) => i === 0 ? '#2563EB' : i < 3 ? '#3B82F6' : '#93C5FD';
+  const youthColor   = (i, item) => item.isHomegrown ? '#CBD5E1' : i === 0 ? '#1A6B4A' : i < 3 ? '#16A34A' : '#86EFAC';
 
   return (
     <div className={styles.wrap}>
@@ -305,10 +486,10 @@ export default function LeaguesView() {
           {regionStats.length > 0 ? (
             <div className={styles.originsRow}>
 
-              {/* ② Region selector list */}
+              {/* Region selector list */}
               <div className={styles.chartWrap}>
                 <div className={styles.chartHeader}>
-                  <span className={styles.chartTitle}>② player origins — by region</span>
+                  <span className={styles.chartTitle}>Player origins — by region</span>
                   <span className={styles.chartSub}>{filteredRegions.length} region{filteredRegions.length !== 1 ? 's' : ''}</span>
                 </div>
 
@@ -334,7 +515,7 @@ export default function LeaguesView() {
                 </div>
               </div>
 
-              {/* ③ State breakdown */}
+              {/* State breakdown */}
               <div className={styles.chartWrap}>
                 {!selectedRegion ? (
                   <div className={styles.stateEmptyState}>
@@ -348,7 +529,7 @@ export default function LeaguesView() {
                   <>
                     <div className={styles.chartHeader}>
                       <div className={styles.drilldownHeader}>
-                        <span className={styles.chartTitle}>③ states &amp; provinces</span>
+                        <span className={styles.chartTitle}>States &amp; provinces</span>
                         <span className={styles.regionTag}>{selectedRegion}</span>
                       </div>
                       <button className={styles.clearBtn}
@@ -427,10 +608,160 @@ export default function LeaguesView() {
             </div>
           )}
 
-          {/* ── Chart 3: Team age distribution ── */}
+          {/* ── Team Roster Origins ── */}
           <div className={styles.chartWrap}>
             <div className={styles.chartHeader}>
-              <span className={styles.chartTitle}>③ team age distribution — oldest → youngest</span>
+              <span className={styles.chartTitle}>Team roster origins — states &amp; prior teams</span>
+              <span className={styles.chartSub}>
+                {rosterLoading
+                  ? 'Loading…'
+                  : `${rosterData.length} team${rosterData.length !== 1 ? 's' : ''}`}
+              </span>
+            </div>
+
+            {rosterLoading ? (
+              <div className={styles.stateEmptyState}>
+                <div className={styles.emptyText}>Fetching roster data…</div>
+              </div>
+            ) : rosterData.length === 0 ? (
+              <div className={styles.stateEmptyState}>
+                <div className={styles.stateEmptyText}>No roster-origin data available.</div>
+              </div>
+            ) : (
+              <div className={styles.rosterOriginsRow}>
+
+                {/* Left: team list */}
+                <div className={styles.teamList}>
+                  {rosterData.map(r => (
+                    <TeamRow
+                      key={r.team}
+                      team={r.team}
+                      count={r.player_count}
+                      selected={selectedTeam === r.team}
+                      onClick={() => setSelectedTeam(
+                        selectedTeam === r.team ? null : r.team
+                      )}
+                    />
+                  ))}
+                </div>
+
+                {/* Right: detail panel */}
+                <div className={styles.rosterDetail}>
+                  {!selectedTeam ? (
+                    <div className={styles.stateEmptyState}>
+                      <div className={styles.stateEmptyIcon}>←</div>
+                      <div className={styles.stateEmptyTitle}>Select a team</div>
+                      <div className={styles.stateEmptyText}>
+                        Click any team on the left to see where its players come from and their prior teams.
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className={styles.rosterDetailHeader}>
+                        <span className={styles.rosterDetailTeam}>{selectedTeam}</span>
+                        <span className={styles.rosterDetailCount}>
+                          {selectedTeamPlayers.length} player{selectedTeamPlayers.length !== 1 ? 's' : ''}
+                        </span>
+                        <button className={styles.clearBtn}
+                          onClick={() => setSelectedTeam(null)}>
+                          ✕ clear
+                        </button>
+                      </div>
+
+                      <div className={styles.rosterDetailCols}>
+                        {/* State breakdown — clickable */}
+                        <BarList
+                          items={rosterStateStats.slice(0, 12)}
+                          maxCount={maxRosterState}
+                          title="Player origins by state — click to see players"
+                          colorFn={stateColor}
+                          emptyText="No birth-state data for this team"
+                          onItemClick={item => setSelectedRosterState(
+                            selectedRosterState === item.label ? null : item.label
+                          )}
+                          selectedLabel={selectedRosterState}
+                        />
+
+                        {/* Youth / prior team breakdown */}
+                        <BarList
+                          items={youthTeamStats.slice(0, 12)}
+                          maxCount={maxYouthTeam}
+                          title="Prior teams (youth / transfer)"
+                          colorFn={youthColor}
+                          emptyText="No prior-team data for this roster"
+                        />
+                      </div>
+
+                      {/* State player drill-down */}
+                      {selectedRosterState && statePlayerList.length > 0 && (
+                        <div className={styles.stateDrilldown}>
+                          <div className={styles.stateDrilldownHeader}>
+                            <span className={styles.stateDrilldownTitle}>
+                              Players from <strong>{selectedRosterState}</strong>
+                            </span>
+                            <span className={styles.stateDrilldownCount}>
+                              {statePlayerList.length} player{statePlayerList.length !== 1 ? 's' : ''}
+                            </span>
+                            <button
+                              className={styles.clearBtn}
+                              onClick={() => setSelectedRosterState(null)}
+                            >
+                              ✕ clear
+                            </button>
+                          </div>
+                          <div className={styles.stateDrilldownGrid}>
+                            {statePlayerList.map((p, i) => {
+                              const epUrl = p.player_url
+                                ? (p.player_url.startsWith('http')
+                                    ? p.player_url
+                                    : `https://www.eliteprospects.com${p.player_url}`)
+                                : null;
+                              const CardEl = epUrl ? 'a' : 'div';
+                              return (
+                                <CardEl
+                                  key={`${p.name}-${i}`}
+                                  className={`${styles.stateDrilldownCard} ${epUrl ? styles.stateDrilldownCardLink : ''}`}
+                                  {...(epUrl ? { href: epUrl, target: '_blank', rel: 'noopener noreferrer' } : {})}
+                                >
+                                  <div className={styles.stateDrilldownCardTop}>
+                                    <span className={styles.stateDrilldownName}>{p.name}</span>
+                                    <span className={`${styles.stateDrilldownPos} ${p.position === 'G' ? styles.posG : p.position === 'D' ? styles.posD : styles.posF}`}>
+                                      {p.position || '—'}
+                                    </span>
+                                  </div>
+                                  <div className={styles.stateDrilldownCardBot}>
+                                    <span className={styles.stateDrilldownBY}>
+                                      {p.birthYear ? `Born ${p.birthYear}` : 'Birth year unknown'}
+                                    </span>
+                                    {p.youth_team && (
+                                      <span className={styles.stateDrilldownPrev}>
+                                        ← {p.youth_team}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {epUrl && (
+                                    <div className={styles.stateDrilldownEPHint}>
+                                      View on Elite Prospects ↗
+                                    </div>
+                                  )}
+                                </CardEl>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+              </div>
+            )}
+          </div>
+
+          {/* ── Team age distribution ── */}
+          <div className={styles.chartWrap}>
+            <div className={styles.chartHeader}>
+              <span className={styles.chartTitle}>Team age distribution — oldest → youngest</span>
               <div className={styles.chartLegend}>
                 <span className={styles.legendDot} style={{ background: '#C0392B' }} /> Oldest
                 <span className={styles.legendDot} style={{ background: '#6B8CAE', marginLeft: 12 }} /> Mid
@@ -453,7 +784,7 @@ export default function LeaguesView() {
                 )}
                 <Bar dataKey="avgBY" radius={[0, 4, 4, 0]} maxBarSize={28}>
                   {teamStats.map(entry => (
-                    <Cell key={entry.team} fill={getColor(entry.team)} fillOpacity={0.85} />
+                    <Cell key={entry.team} fill={getAgeColor(entry.team)} fillOpacity={0.85} />
                   ))}
                   <LabelList dataKey="avgAge" position="right" formatter={v => `${v} yrs`}
                     style={{ fontSize: 11, fontWeight: 600, fill: '#555' }} />

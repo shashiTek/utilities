@@ -1,86 +1,213 @@
-.bar { 
-  display: grid;
-  /* Automatically columns based on content size, fitting as many as possible */
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); 
-  gap: 16px; 
-  align-items: end; /* Ensures inputs align cleanly if labels wrap */
-  margin-bottom: 1.5rem; 
-  padding: 16px 20px; 
-  background: var(--bg-card); 
-  border: 1px solid var(--border); 
-  border-radius: var(--radius-lg); 
-  box-shadow: var(--shadow-sm); 
-} 
-
-.group { 
-  display: flex; 
-  flex-direction: column; 
-  gap: 6px; 
-} 
-
-.label { 
-  font-size: 9px; 
-  letter-spacing: 0.12em; 
-  text-transform: uppercase; 
-  color: var(--text-muted); 
-  font-weight: 500; 
-  font-family: var(--font-mono); 
-} 
-
-.select, .input { 
-  background: var(--bg-surface); 
-  border: 1.5px solid var(--border); 
-  border-radius: var(--radius); 
-  color: var(--text); 
-  font-family: var(--font-body); 
-  font-size: 13px; 
-  height: 34px; 
-  padding: 0 10px; 
-  outline: none; 
-  transition: border-color 0.15s, box-shadow 0.15s; 
-  width: 100%; /* Spans full grid track width instead of using static widths */
-  box-sizing: border-box; /* Forces padding inside layout boundary boxes */
-} 
-
-.select:focus, .input:focus { 
-  border-color: var(--accent); 
-  box-shadow: 0 0 0 3px var(--accent-dim); 
-  background: var(--bg-card); 
-} 
-
-.select:hover, .input:hover { 
-  border-color: var(--border-mid); 
-} 
-
-/* Reset Button layout wrapper mapping */
-.reset { 
-  height: 34px; 
-  padding: 0 16px; 
-  background: transparent; 
-  border: 1.5px solid var(--border); 
-  border-radius: var(--radius); 
-  color: var(--text-muted); 
-  font-size: 12px; 
-  cursor: pointer; 
-  transition: all 0.15s; 
-  font-weight: 500; 
-  width: 100%; /* Fills layout slot naturally on mobile breakpoints */
-  box-sizing: border-box;
-} 
-
-.reset:hover { 
-  border-color: var(--accent); 
-  color: var(--accent); 
-  background: var(--accent-dim); 
+/* ─── Outer wrapper ───────────────────────────────────────────────────────── */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 1rem;
 }
 
-/* Adaptive Breakpoint Updates */
-@media (min-width: 768px) {
-  .bar {
-    /* Switches to explicit flexible auto column layout on wide screens */
-    grid-template-columns: repeat(auto-flow, minmax(130px, 1fr)) auto;
-  }
-  .reset {
-    width: auto; /* Shrinks to text padding bound only when safe space is available */
-  }
+/* ─── Filter bar ──────────────────────────────────────────────────────────── */
+.bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  flex-wrap: wrap;
+}
+
+/* ─── Control groups ──────────────────────────────────────────────────────── */
+.group, .rangeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rangeGroup {
+  min-width: 88px;
+  flex: 0 0 88px;
+}
+
+.searchGroup {
+  flex: 1 1 180px;
+}
+
+/* ─── Label ───────────────────────────────────────────────────────────────── */
+.label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+/* ─── Select & input ──────────────────────────────────────────────────────── */
+.select, .input {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  height: 34px;
+  padding: 0 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.select:focus, .input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  background: var(--bg-card);
+}
+
+.select:hover, .input:hover { border-color: var(--border-mid); }
+
+/* ─── Search wrapper ──────────────────────────────────────────────────────── */
+.searchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  font-size: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+  line-height: 1;
+}
+
+.searchWrap .input {
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+.inputClear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.inputClear:hover { color: var(--text); }
+
+/* ─── Position toggle buttons ─────────────────────────────────────────────── */
+.posGroup {
+  display: flex;
+  height: 34px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1.5px solid var(--border);
+}
+
+.posBtn {
+  flex: 1;
+  background: var(--bg-surface);
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  padding: 0 10px;
+}
+
+.posBtn:last-child { border-right: none; }
+.posBtn:hover { background: var(--bg-card); color: var(--text); }
+
+.posBtnActive {
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+/* ─── Reset button ────────────────────────────────────────────────────────── */
+.reset {
+  height: 34px;
+  padding: 0 14px;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+
+.reset:disabled { opacity: 0.35; cursor: default; }
+
+.resetActive {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.resetActive:hover {
+  background: var(--accent-dim);
+}
+
+/* ─── Active filter chips ─────────────────────────────────────────────────── */
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 4px;
+}
+
+.chipsLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-right: 2px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 10px;
+  background: rgba(232, 71, 42, 0.07);
+  border: 1px solid rgba(232, 71, 42, 0.22);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #E8472A);
+}
+
+.chipX {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 9px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.chipX:hover { opacity: 1; }
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .bar { flex-direction: column; align-items: stretch; }
+  .rangeGroup { flex: 1 1 auto; }
 }

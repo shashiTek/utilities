@@ -139,6 +139,29 @@
   margin-top: 4px;
 }
 
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.profileBtn {
+  background: rgba(37, 99, 235, 0.06);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: var(--radius);
+  color: #2563EB;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.profileBtn:hover {
+  background: rgba(37, 99, 235, 0.14);
+}
+
 .clearBtn {
   flex-shrink: 0;
   background: transparent;

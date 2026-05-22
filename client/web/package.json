@@ -10,9 +10,15 @@
     "react-scripts": "5.0.1",
     "recharts": "^3.8.1"
   },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.0.2",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/user-event": "^14.4.3"
+  },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build"
+    "build": "react-scripts build",
+    "test": "react-scripts test --watchAll=false --passWithNoTests"
   },
   "proxy": "http://127.0.0.1:5000",
   "browserslist": {

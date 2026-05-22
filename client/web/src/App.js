@@ -13,7 +13,8 @@ import styles from './App.module.css';
 
 // ── Default filter states ────────────────────────────────────────────────────
 const DEFAULT_PLAYER_FILTERS = {
-  birthYear: '', season: '', league: '', position: '', search: '',
+  birthYearFrom: '', birthYearTo: '',
+  season: '', league: '', position: '', search: '',
   page: 0, sortBy: 'player_name', sortDir: 'asc',
 };
 
@@ -93,15 +94,19 @@ export default function App() {
       setError(null);
       try {
         const res = await fetchPlayers({
-          birthYear: playerFilters.birthYear,
-          season:    playerFilters.season,
-          league:    playerFilters.league,
-          position:  playerFilters.position,
-          search:    debouncedPlayerSearch,   // ← debounced only, never raw
-          page:      playerFilters.page,
-          pageSize:  50,
-          sortBy:    playerFilters.sortBy,
-          sortDir:   playerFilters.sortDir,
+          birthYearFrom: playerFilters.birthYearFrom,
+          birthYearTo:   playerFilters.birthYearTo,
+          // backward-compat: pass single birthYear if only one end is set
+          birthYear:     (!playerFilters.birthYearTo && playerFilters.birthYearFrom)
+                           ? playerFilters.birthYearFrom : undefined,
+          season:        playerFilters.season,
+          league:        playerFilters.league,
+          position:      playerFilters.position,
+          search:        debouncedPlayerSearch,
+          page:          playerFilters.page,
+          pageSize:      50,
+          sortBy:        playerFilters.sortBy,
+          sortDir:       playerFilters.sortDir,
         });
         if (res) {
           setPlayers(res);
@@ -113,7 +118,8 @@ export default function App() {
   }, [
     activeView,
     // Player filter primitives — search intentionally excluded (uses debounced below)
-    playerFilters.birthYear,
+    playerFilters.birthYearFrom,
+    playerFilters.birthYearTo,
     playerFilters.season,
     playerFilters.league,
     playerFilters.position,
@@ -155,7 +161,7 @@ export default function App() {
       case 'dashboard':
         return (
           <>
-            <MetricCards metrics={metrics} loading={loading} />
+            <MetricCards metrics={metrics} loading={loading} onPlayerClick={setProfilePlayer} />
             <Filters
               filters={filterOptions}
               values={playerFilters}
@@ -173,12 +179,13 @@ export default function App() {
               onSort={handlePlayerSort}
               onPage={(p) => setPlayerFilters(f => ({ ...f, page: p }))}
               currentPositionFilter={playerFilters.position}
+              onPlayerClick={setProfilePlayer}
             />
           </>
         );
 
       case 'players':
-        return <PlayerCompare />;
+        return <PlayerCompare onPlayerClick={setProfilePlayer} />;
 
       case 'teams':
         return (
@@ -266,6 +273,14 @@ export default function App() {
           {renderView()}
         </div>
       </main>
+
+      {/* ── Player profile drawer (global overlay) ── */}
+      {profilePlayer && (
+        <PlayerProfileDrawer
+          playerName={profilePlayer}
+          onClose={() => setProfilePlayer(null)}
+        />
+      )}
     </div>
   );
 }

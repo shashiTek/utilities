@@ -1,69 +1,161 @@
+/* ─── Grid ────────────────────────────────────────────────────────────────── */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
+  transition: opacity 0.2s;
 }
 
+.loading { opacity: 0.45; pointer-events: none; }
+
+/* ─── Card ────────────────────────────────────────────────────────────────── */
 .card {
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
+  padding: 16px 18px;
   border: 1.5px solid var(--border);
   background: var(--bg-card);
-  transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   position: relative;
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
+.card:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+
+/* colour accent strip top */
 .card::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 0; left: 0; right: 0;
   height: 3px;
 }
 
-.card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
+.accent::before { background: var(--accent, #E8472A); }
+.teal::before   { background: var(--teal,   #0D7C6B); }
+.amber::before  { background: var(--amber,  #BA7517); }
+.blue::before   { background: var(--blue,   #1B5FA8); }
+.neutral::before { background: var(--border-mid, #ccc); }
 
-.card.loading { opacity: 0.5; }
-
-.accent::before  { background: var(--accent); }
-.teal::before    { background: var(--teal); }
-.amber::before   { background: var(--amber); }
-.blue::before    { background: var(--blue); }
-
+/* ─── Card content ────────────────────────────────────────────────────────── */
 .label {
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 10px;
-  font-weight: 500;
+  font-weight: 600;
   font-family: var(--font-mono);
+  margin-bottom: 4px;
 }
 
-.value {
-  font-family: var(--font-display);
-  font-size: 36px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
+.bigNum {
+  font-size: 32px;
+  font-weight: 700;
   line-height: 1;
-  margin-bottom: 6px;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 2px;
 }
+
+.accent .bigNum { color: var(--accent, #E8472A); }
+.neutral .bigNum { color: var(--text); }
+
+/* Clickable player name */
+.value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  margin-bottom: 2px;
+  display: block;
+}
+
+.nameBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  transition: color 0.12s;
+}
+
+.nameBtn:hover { color: #2563EB; text-decoration: underline; text-underline-offset: 3px; }
+
+.teal  .nameBtn:hover { color: var(--teal,  #0D7C6B); }
+.amber .nameBtn:hover { color: var(--amber, #BA7517); }
+.blue  .nameBtn:hover { color: var(--blue,  #1B5FA8); }
 
 .sub {
   font-size: 11px;
   color: var(--text-dim);
   font-family: var(--font-mono);
+  margin-bottom: 6px;
 }
 
-.accent .value { color: var(--accent); }
-.teal   .value { color: var(--teal); }
-.amber  .value { color: var(--amber); }
-.blue   .value { color: var(--blue); }
+/* ─── Roster split bars ───────────────────────────────────────────────────── */
+.splitBars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.splitRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.splitLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.miniBarTrack {
+  flex: 1;
+  height: 5px;
+  background: rgba(0,0,0,0.07);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.miniBarFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.splitCount {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ─── Stat chip ───────────────────────────────────────────────────────────── */
+.statRow { margin-top: 6px; }
+
+.statChip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(0,0,0,0.05);
+  color: var(--text-muted);
+  white-space: nowrap;
+}

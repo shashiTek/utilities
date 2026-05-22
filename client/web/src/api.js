@@ -18,6 +18,9 @@ export const fetchFilters = () => get('/api/filters');
 export const fetchPlayers = (params) => get('/api/players', params);
 export const fetchPlayer = (id) => get(`/api/player/${id}`);
 
+export const fetchTeamRosterOrigins = (league, season) =>
+  get('/api/league/team-roster-origins', { league, season });
+
 // ── Team Endpoints (Using the unified get helper) ──
 /**
  * Fetches dropdown data options for team view filtering matrix

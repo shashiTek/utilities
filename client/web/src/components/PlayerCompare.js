@@ -86,7 +86,7 @@ function PlayerSearch({ slot, onSelect, disabled }) {
 }
 
 // ── Player card header ────────────────────────────────────────────────────────
-function PlayerCard({ player, slot, onClear, onSelect }) {
+function PlayerCard({ player, slot, onClear, onSelect, onProfileClick }) {
   if (!player) {
     return (
       <div className={styles.emptySlot}>
@@ -97,7 +97,6 @@ function PlayerCard({ player, slot, onClear, onSelect }) {
     );
   }
 
-  const s = player.stats || {};
   const isGoalie = (player.position || '').toUpperCase() === 'G';
 
   return (
@@ -119,7 +118,18 @@ function PlayerCard({ player, slot, onClear, onSelect }) {
             <div className={styles.birthYear}>Born {player.birthYear}</div>
           )}
         </div>
-        <button className={styles.clearBtn} onClick={onClear} title="Remove player">✕</button>
+        <div className={styles.cardActions}>
+          {onProfileClick && (
+            <button
+              className={styles.profileBtn}
+              onClick={() => onProfileClick(player.player_name)}
+              title="View full profile"
+            >
+              Profile
+            </button>
+          )}
+          <button className={styles.clearBtn} onClick={onClear} title="Remove player">✕</button>
+        </div>
       </div>
       <PlayerSearch slot={slot} onSelect={onSelect} />
     </div>
@@ -127,7 +137,7 @@ function PlayerCard({ player, slot, onClear, onSelect }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function PlayerCompare() {
+export default function PlayerCompare({ onPlayerClick }) {
   const [left,  setLeft]  = useState(null);
   const [right, setRight] = useState(null);
 
@@ -157,9 +167,9 @@ export default function PlayerCompare() {
 
       {/* ── Selector row ── */}
       <div className={styles.selectorRow}>
-        <PlayerCard player={left}  slot={1} onClear={() => setLeft(null)}  onSelect={setLeft} />
+        <PlayerCard player={left}  slot={1} onClear={() => setLeft(null)}  onSelect={setLeft}  onProfileClick={onPlayerClick} />
         <div className={styles.vsChip}>VS</div>
-        <PlayerCard player={right} slot={2} onClear={() => setRight(null)} onSelect={setRight} />
+        <PlayerCard player={right} slot={2} onClear={() => setRight(null)} onSelect={setRight} onProfileClick={onPlayerClick} />
       </div>
 
       {/* ── Comparison panels ── */}

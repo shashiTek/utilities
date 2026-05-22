@@ -21,21 +21,25 @@ players_bp = Blueprint("players", __name__)
 # GET /api/players
 # ---------------------------------------------------------------------------
 # Query params:
-#   birthYear  — integer e.g. 2010
-#   season     — string  e.g. "2025-2026"
-#   league     — string  e.g. "ushs-prep"
-#   position   — string  "G" | "F/D"
-#   search     — string  (matches name or team, case-insensitive)
-#   page       — integer (default 0)
-#   pageSize   — integer (default 50)
-#   sortBy     — field name (default "player_name")
-#   sortDir    — "asc" | "desc" (default "asc")
+#   birthYear     — exact integer e.g. 2010  (legacy, single-year)
+#   birthYearFrom — range start  e.g. 2006   (inclusive)
+#   birthYearTo   — range end    e.g. 2008   (inclusive)
+#   season        — string  e.g. "2025-2026"
+#   league        — string  e.g. "ushs-prep"
+#   position      — string  "G" | "F/D"
+#   search        — string  (matches name or team, case-insensitive)
+#   page          — integer (default 0)
+#   pageSize      — integer (default 50)
+#   sortBy        — field name (default "player_name")
+#   sortDir       — "asc" | "desc" (default "asc")
 # ---------------------------------------------------------------------------
 @players_bp.route("/api/players")
 def get_players():
     try:
-        birth_year = request.args.get("birthYear")
-        season     = request.args.get("season")
+        birth_year      = request.args.get("birthYear")
+        birth_year_from = request.args.get("birthYearFrom")
+        birth_year_to   = request.args.get("birthYearTo")
+        season          = request.args.get("season")
         league     = request.args.get("league")
         position   = request.args.get("position")
         search     = request.args.get("search", "").strip()
@@ -101,8 +105,18 @@ def get_players():
             }
         ]
 
-        # 3. Birth year post-filter
-        if birth_year:
+        # 3. Birth year post-filter (supports exact year or from/to range)
+        by_filter = {}
+        if birth_year_from or birth_year_to:
+            try:
+                if birth_year_from:
+                    by_filter["$gte"] = int(birth_year_from)
+                if birth_year_to:
+                    by_filter["$lte"] = int(birth_year_to)
+                pipeline.append({"$match": {"birthYearRaw": by_filter}})
+            except ValueError:
+                pass
+        elif birth_year:
             try:
                 pipeline.append({"$match": {"birthYearRaw": int(birth_year)}})
             except ValueError:
@@ -412,6 +426,122 @@ def chart_birthyear():
         return jsonify_mongo(current_app, list(db.stats.aggregate(pipeline)))
     except PyMongoError as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET /api/league/team-roster-origins
+# ---------------------------------------------------------------------------
+# Query params:
+#   league  — required, e.g. "ushs-prep"
+#   season  — optional, e.g. "2024-2025"
+#
+# Returns an array of teams, each with:
+#   { team, player_count, players: [{ name, position, birth_place,
+#                                     youth_team, youth_league, youth_season }] }
+#
+# "youth_team" is the earliest team in the DB that is *different* from the
+# player's current team — i.e. where they played before joining this roster.
+# If a player has always been on the same team, youth_team is null.
+# ---------------------------------------------------------------------------
+@players_bp.route("/api/league/team-roster-origins")
+def team_roster_origins():
+    league = request.args.get("league")
+    season = request.args.get("season")
+
+    if not league:
+        return jsonify({"error": "league param required"}), 400
+
+    match = {"league": league}
+    if season:
+        match["season"] = season
+
+    pipeline = [
+        # 1. Scope to current league / season
+        {"$match": match},
+
+        # 2. One row per (team, player) — eliminates duplicates if multiple
+        #    stat records exist for the same player in the same league
+        {"$group": {
+            "_id": {"team": "$team", "player_url": "$player_url"},
+            "player_name": {"$first": "$player_name"},
+            "position":    {"$first": "$position"},
+        }},
+
+        # 3. Join with players bio for birth-place data
+        {"$lookup": {
+            "from":         "players",
+            "localField":   "_id.player_url",
+            "foreignField": "url",
+            "as":           "bio"
+        }},
+        {"$unwind": {"path": "$bio", "preserveNullAndEmptyArrays": True}},
+
+        # 4. Find earliest recorded stats on a DIFFERENT team
+        #    → that's the player's youth / prior team
+        {"$lookup": {
+            "from": "stats",
+            "let":  {"purl": "$_id.player_url", "curr": "$_id.team"},
+            "pipeline": [
+                {"$match": {"$expr": {
+                    "$and": [
+                        {"$eq":  ["$player_url", "$$purl"]},
+                        {"$ne":  ["$team",       "$$curr"]},
+                    ]
+                }}},
+                {"$sort":    {"season": 1}},
+                {"$limit":   1},
+                {"$project": {"_id": 0, "team": 1, "league": 1, "season": 1}},
+            ],
+            "as": "prior_stat"
+        }},
+
+        # 5. Shape each player document
+        {"$project": {
+            "_id":         0,
+            "team":        "$_id.team",
+            "player_url":  "$_id.player_url",
+            "player_name": 1,
+            "position":    1,
+            "birth_place": "$bio.birthPlace",
+            "birth_date":  "$bio.birthDate",
+            "youth_team":   {"$arrayElemAt": ["$prior_stat.team",   0]},
+            "youth_league": {"$arrayElemAt": ["$prior_stat.league", 0]},
+            "youth_season": {"$arrayElemAt": ["$prior_stat.season", 0]},
+        }},
+
+        # 6. Group by current team
+        {"$group": {
+            "_id":          "$team",
+            "player_count": {"$sum": 1},
+            "players":      {"$push": {
+                "name":         "$player_name",
+                "position":     "$position",
+                "player_url":   "$player_url",
+                "birth_place":  "$birth_place",
+                "birth_date":   "$birth_date",
+                "youth_team":   "$youth_team",
+                "youth_league": "$youth_league",
+                "youth_season": "$youth_season",
+            }},
+        }},
+
+        # 7. Sort alphabetically by team name
+        {"$sort": {"_id": 1}},
+
+        {"$project": {
+            "_id":          0,
+            "team":         "$_id",
+            "player_count": 1,
+            "players":      1,
+        }},
+    ]
+
+    try:
+        result = list(db.stats.aggregate(pipeline))
+        return jsonify_mongo(current_app, result)
+    except Exception as exc:
+        print(f"Error in team_roster_origins: {exc}")
+        return jsonify({"error": str(exc)}), 500
 
 
 # ---------------------------------------------------------------------------
