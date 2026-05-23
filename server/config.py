@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 # Load .env from the shared utilities root
 _ROOT = Path(__file__).resolve().parents[2]
 print(f"Loading environment variables from: {_ROOT / '.env'}")
-load_dotenv(_ROOT /".env")
+load_dotenv(_ROOT /".env",override=True)
 
 
 @dataclass(frozen=True)

@@ -263,7 +263,7 @@ class StatsScraper(BaseScraper):
             groups[key]["player_urls"].add(norm_url)
             # Enables Goalie scraping branches dynamically if any single goalie belongs to the group
             if meta["position_hint"] == "G":
-                print(f"Processing player {meta['player_name']} in league {ls} season {ss} with position hint {meta['position_hint']}")
+                #print(f"Processing player {meta['player_name']} in league {ls} season {ss} with position hint {meta['position_hint']}")
                 groups[key]["has_goalie"] = True
             else:
                 groups[key]["has_skater"] = True
