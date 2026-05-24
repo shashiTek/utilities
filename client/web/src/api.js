@@ -16,6 +16,7 @@ async function get(path, params = {}) {
 // ── Player & Global Endpoints ──
 export const fetchFilters = () => get('/api/filters');
 export const fetchPlayers = (params) => get('/api/players', params);
+export const fetchPlayersExport = (params) => get('/api/players/export', params);
 export const fetchPlayer = (id) => get(`/api/player/${id}`);
 
 export const fetchTeamRosterOrigins = (league, season) =>

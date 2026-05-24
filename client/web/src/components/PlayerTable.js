@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useCallback } from 'react';
+import { fetchPlayersExport } from '../api';
 import styles from './PlayerTable.module.css';
 
 // ─── CSV export ────────────────────────────────────────────────────────────────
@@ -14,6 +15,7 @@ function exportCSV(data, cols) {
       case 'team':        v = row.team;        break;
       case 'season':      v = row.season;      break;
       case 'birthYear':   v = row.birthYear;   break;
+      case 'birthState':  v = row.birthState;  break;
       case 'gp':  v = s.gp;         break;
       case 'g':   v = s.g;          break;
       case 'a':   v = s.a;          break;
@@ -76,6 +78,7 @@ function StatBar({ value, pct, highlight, isNeg }) {
 const BASE_COLS = [
   { key: 'player_name', label: 'Player',  w: '150px' },
   { key: 'birthYear',   label: 'Born',    w: '54px'  },
+  { key: 'birthState',  label: 'State',   w: '54px'  },
   { key: 'season',      label: 'Season',  w: '94px'  },
   { key: 'league',      label: 'League',  w: '80px'  },
   { key: 'team',        label: 'Team',    w: '130px' },
@@ -114,6 +117,7 @@ const MIXED_COLS  = [
   { key: 'player_name', label: 'Player',  w: '140px' },
   { key: 'position',    label: 'Pos',     w: '52px'  },
   { key: 'birthYear',   label: 'Born',    w: '54px'  },
+  { key: 'birthState',  label: 'State',   w: '54px'  },
   { key: 'season',      label: 'Season',  w: '94px'  },
   { key: 'league',      label: 'League',  w: '80px'  },
   { key: 'team',        label: 'Team',    w: '120px' },
@@ -162,6 +166,7 @@ function computeMaxes(data, statCols) {
 export default function PlayerTable({
   data, loading, total, page, pageSize, onSort, sortBy, sortDir, onPage,
   currentPositionFilter = 'ALL', onPlayerClick,
+  birthYearFrom, birthYearTo, season, league, position, search,
 }) {
   const wrapRef = useRef(null);
 
@@ -177,6 +182,28 @@ export default function PlayerTable({
     if (['F', 'D', 'FORWARD', 'DEFENSE', 'SKATER', 'F/D', 'F-D'].includes(f)) return SKATER_COLS;
     return MIXED_COLS;
   }, [currentPositionFilter]);
+
+  // Handle async export of all records
+  const handleExportAll = useCallback(async () => {
+    try {
+      const res = await fetchPlayersExport({
+        birthYearFrom: birthYearFrom || undefined,
+        birthYearTo: birthYearTo || undefined,
+        season: season || undefined,
+        league: league || undefined,
+        position: position || undefined,
+        search: search || undefined,
+        sortBy: sortBy,
+        sortDir: sortDir,
+      });
+      if (res && res.data) {
+        exportCSV(res.data, cols);
+      }
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Failed to export data');
+    }
+  }, [birthYearFrom, birthYearTo, season, league, position, search, sortBy, sortDir, cols]);
 
   // Stat columns are those with num:true (for bar rendering)
   const statCols = cols.filter(c => c.num);
@@ -201,8 +228,8 @@ export default function PlayerTable({
         {data.length > 0 && (
           <button
             className={styles.exportBtn}
-            onClick={() => exportCSV(data, cols)}
-            title="Export current page to CSV"
+            onClick={handleExportAll}
+            title="Export all records to CSV"
           >
             ↓ Export CSV
           </button>
@@ -281,6 +308,8 @@ export default function PlayerTable({
                       return <td key={ck}><span className={styles.seasonTag}>{row.season}</span></td>;
                     if (ck === 'birthYear')
                       return <td key={ck} className={styles.num}>{row.birthYear ?? '—'}</td>;
+                    if (ck === 'birthState')
+                      return <td key={ck} className={styles.num}>{row.birthState ?? '—'}</td>;
 
                     // ── Numeric / stat cells with inline bar ────────────────
                     const raw = getRawValue(ck, row);

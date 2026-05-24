@@ -85,6 +85,18 @@ def get_players():
                     },
                     "birthDate":   "$bio.birthDate",
                     "birthPlace":  "$bio.birthPlace",
+                    "birthState":  {
+                        "$ifNull": [
+                            {"$getField": {
+                                "field": "addressRegion",
+                                "input": {"$getField": {
+                                    "field": "address",
+                                    "input": "$bio.birthPlace"
+                                }}
+                            }},
+                            ""
+                        ]
+                    },
                     "nationality": "$bio.nationality",
                     "knowsAbout":  "$bio.knowsAbout",
                 }
@@ -310,6 +322,128 @@ def get_players():
 
     except Exception as e:
         print(f"Error in get_players: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET /api/players/export
+# ---------------------------------------------------------------------------
+# Same parameters as /api/players but returns ALL matching records (no pagination)
+# for CSV export purposes
+# ---------------------------------------------------------------------------
+@players_bp.route("/api/players/export")
+def export_players():
+    try:
+        birth_year      = request.args.get("birthYear")
+        birth_year_from = request.args.get("birthYearFrom")
+        birth_year_to   = request.args.get("birthYearTo")
+        season          = request.args.get("season")
+        league          = request.args.get("league")
+        position        = request.args.get("position")
+        search          = request.args.get("search", "").strip()
+        sort_by         = request.args.get("sortBy", "player_name")
+        sort_dir        = 1 if request.args.get("sortDir", "asc") == "asc" else -1
+
+        stats_collection = db["stats"]
+
+        # 1. Base query construction (same as get_players)
+        base_match = {}
+        if season:   base_match["season"]   = season
+        if league:   base_match["league"]   = league
+        if position: base_match["position"] = position
+        if search:
+            base_match["$or"] = [
+                {"player_name": {"$regex": search, "$options": "i"}},
+                {"team":        {"$regex": search, "$options": "i"}},
+            ]
+
+        pipeline = [{"$match": base_match}] if base_match else []
+
+        # 2. Join with players bio (same as get_players)
+        pipeline += [
+            {
+                "$lookup": {
+                    "from": "players",
+                    "localField": "player_url",
+                    "foreignField": "url",
+                    "as": "bio"
+                }
+            },
+            {"$unwind": {"path": "$bio", "preserveNullAndEmptyArrays": True}},
+            {
+                "$addFields": {
+                    "birthYearRaw": {
+                        "$toInt": {
+                            "$substr": [
+                                {"$ifNull": ["$bio.birthDate", "0000-00-00"]}, 0, 4
+                            ]
+                        }
+                    },
+                    "birthDate":   "$bio.birthDate",
+                    "birthPlace":  "$bio.birthPlace",
+                    "birthState":  {
+                        "$ifNull": [
+                            {"$getField": {
+                                "field": "addressRegion",
+                                "input": {"$getField": {
+                                    "field": "address",
+                                    "input": "$bio.birthPlace"
+                                }}
+                            }},
+                            ""
+                        ]
+                    },
+                    "nationality": "$bio.nationality",
+                    "knowsAbout":  "$bio.knowsAbout",
+                }
+            },
+            {
+                "$addFields": {
+                    "birthYear": {
+                        "$cond": {
+                            "if": {"$or": [
+                                {"$eq": ["$birthYearRaw", 0]},
+                                {"$eq": ["$birthYearRaw", None]}
+                            ]},
+                            "then": "N/A",
+                            "else": "$birthYearRaw"
+                        }
+                    }
+                }
+            }
+        ]
+
+        # 3. Birth year post-filter
+        by_filter = {}
+        if birth_year_from or birth_year_to:
+            try:
+                if birth_year_from:
+                    by_filter["$gte"] = int(birth_year_from)
+                if birth_year_to:
+                    by_filter["$lte"] = int(birth_year_to)
+                pipeline.append({"$match": {"birthYearRaw": by_filter}})
+            except ValueError:
+                pass
+        elif birth_year:
+            try:
+                pipeline.append({"$match": {"birthYearRaw": int(birth_year)}})
+            except ValueError:
+                if birth_year.upper() == "N/A":
+                    pipeline.append({"$match": {"birthYear": "N/A"}})
+
+        # 4. Get all matching records without pagination
+        pipeline += [
+            {"$sort": {sort_by: sort_dir}},
+            {"$project": {"bio": 0, "birthYearRaw": 0, "source_player_id": 0}}
+        ]
+        results = list(stats_collection.aggregate(pipeline))
+
+        return jsonify_mongo(current_app, {
+            "data": results
+        })
+
+    except Exception as e:
+        print(f"Error in export_players: {e}")
         return jsonify({"error": str(e)}), 500
 
 

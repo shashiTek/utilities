@@ -180,6 +180,12 @@ export default function App() {
               onPage={(p) => setPlayerFilters(f => ({ ...f, page: p }))}
               currentPositionFilter={playerFilters.position}
               onPlayerClick={setProfilePlayer}
+              birthYearFrom={playerFilters.birthYearFrom}
+              birthYearTo={playerFilters.birthYearTo}
+              season={playerFilters.season}
+              league={playerFilters.league}
+              position={playerFilters.position}
+              search={playerFilters.search}
             />
           </>
         );
