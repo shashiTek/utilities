@@ -34,7 +34,7 @@ CORS(app)  # Allow React dev server on :3000
 # ---------------------------------------------------------------------------
 # MongoDB connection
 # ---------------------------------------------------------------------------
-MONGO_URI   = os.getenv("MONGO_URI", "mongodb://shashipahwa:StudyHard$@localhost:27017/")
+MONGO_URI   = os.getenv("MONGO_URI")
 DB_NAME     = os.getenv("DB_NAME",   "player_analysis_db")
 
 client = MongoClient(MONGO_URI)
