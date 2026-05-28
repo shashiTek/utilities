@@ -8,52 +8,95 @@ const POSITIONS = [
 ];
 
 export default function Filters({ filters, values, onChange }) {
-  const set = (k) => (e) => onChange({ ...values, [k]: e.target.value, page: 0 });
+  // FIX 1: Explicitly cast elements to numbers right away to ensure stable sort comparisons
+  const birthYears = useMemo(() => {
+    const rawYears = filters.birthYears || [];
+    const validNumbers = rawYears.map(y => parseInt(y, 10)).filter(y => !isNaN(y));
+    return [...new Set(validNumbers)].sort((a, b) => a - b);
+  }, [filters.birthYears]);
 
-  // Sorted unique birth years for From/To selects
-  const birthYears = useMemo(() =>
-    [...new Set(filters.birthYears || [])].sort((a, b) => a - b),
-    [filters.birthYears]
-  );
+  // FIX 2: Parse current state selection variables into strict integers/nulls
+  const currentFrom = values.birthYearFrom ? parseInt(values.birthYearFrom, 10) : null;
+  const currentTo = values.birthYearTo ? parseInt(values.birthYearTo, 10) : null;
 
-  // Active filter chips — show what is currently applied
+  // Handles state updates while safely preserving numbers or fallback strings
+  const set = (k) => (e) => {
+    const rawVal = e.target.value;
+    // Keep numbers as strings/ints matching backend expectation, but prioritize structural clearing
+    onChange({ ...values, [k]: rawVal, page: 0 });
+  };
+
+  // FIX 3: Extracted chip clear handler execution strategies out to protect against memory leak ref triggers
   const activeChips = useMemo(() => {
     const chips = [];
+    
     if (values.birthYearFrom || values.birthYearTo) {
-      const from = values.birthYearFrom || '—';
-      const to   = values.birthYearTo   || '—';
-      chips.push({ key: 'byRange', label: `Born ${from} – ${to}`, clear: () => onChange({ ...values, birthYearFrom: '', birthYearTo: '', page: 0 }) });
+      const displayFrom = values.birthYearFrom || '—';
+      const displayTo = values.birthYearTo || '—';
+      chips.push({
+        key: 'byRange',
+        label: `Born ${displayFrom} – ${displayTo}`,
+        type: 'birthRange'
+      });
     }
-    if (values.season)   chips.push({ key: 'season',   label: values.season,               clear: () => onChange({ ...values, season: '',   page: 0 }) });
-    if (values.league)   chips.push({ key: 'league',   label: values.league.toUpperCase(), clear: () => onChange({ ...values, league: '',   page: 0 }) });
-    if (values.position) chips.push({ key: 'position', label: values.position,             clear: () => onChange({ ...values, position: '', page: 0 }) });
-    if (values.search)   chips.push({ key: 'search',   label: `"${values.search}"`,        clear: () => onChange({ ...values, search: '',   page: 0 }) });
+    if (values.season) chips.push({ key: 'season', label: values.season, type: 'season' });
+    if (values.league) chips.push({ key: 'league', label: values.league.toUpperCase(), type: 'league' });
+    if (values.position) chips.push({ key: 'position', label: values.position, type: 'position' });
+    if (values.search) chips.push({ key: 'search', label: `"${values.search}"`, type: 'search' });
+    
     return chips;
-  }, [values, onChange]);
+  }, [values.birthYearFrom, values.birthYearTo, values.season, values.league, values.position, values.search]);
+
+  // Unified dynamic clear callback handler method
+  const handleClearChip = (type) => {
+    const updated = { ...values, page: 0 };
+    if (type === 'birthRange') {
+      updated.birthYearFrom = '';
+      updated.birthYearTo = '';
+    } else {
+      updated[type] = '';
+    }
+    onChange(updated);
+  };
 
   const hasFilters = activeChips.length > 0;
 
   return (
     <div className={styles.wrap}>
       <div className={styles.bar}>
-
-        {/* Birth year range */}
+        
+        {/* Birth year range from */}
         <div className={styles.rangeGroup}>
           <label className={styles.label}>Born — from</label>
           <select className={styles.select} value={values.birthYearFrom || ''} onChange={set('birthYearFrom')}>
             <option value="">Any</option>
             {birthYears.map(y => (
-              <option key={y} value={y} disabled={values.birthYearTo && y > values.birthYearTo}>{y}</option>
+              <option 
+                key={y} 
+                value={y} 
+                //FIX 4: Explicitly utilizes verified currentTo integer parsing for disabling logic
+                disabled={currentTo !== null && y > currentTo}
+              >
+                {y}
+              </option>
             ))}
           </select>
         </div>
 
+        {/* Birth year range to */}
         <div className={styles.rangeGroup}>
           <label className={styles.label}>to</label>
           <select className={styles.select} value={values.birthYearTo || ''} onChange={set('birthYearTo')}>
             <option value="">Any</option>
             {birthYears.map(y => (
-              <option key={y} value={y} disabled={values.birthYearFrom && y < values.birthYearFrom}>{y}</option>
+              <option 
+                key={y} 
+                value={y} 
+                //FIX 5: Explicitly utilizes verified currentFrom integer parsing for disabling logic
+                disabled={currentFrom !== null && y < currentFrom}
+              >
+                {y}
+              </option>
             ))}
           </select>
         </div>
@@ -61,7 +104,7 @@ export default function Filters({ filters, values, onChange }) {
         {/* Season */}
         <div className={styles.group}>
           <label className={styles.label}>Season</label>
-          <select className={styles.select} value={values.season} onChange={set('season')}>
+          <select className={styles.select} value={values.season || ''} onChange={set('season')}>
             <option value="">All seasons</option>
             {(filters.seasons || []).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -70,7 +113,7 @@ export default function Filters({ filters, values, onChange }) {
         {/* League */}
         <div className={styles.group}>
           <label className={styles.label}>League</label>
-          <select className={styles.select} value={values.league} onChange={set('league')}>
+          <select className={styles.select} value={values.league || ''} onChange={set('league')}>
             <option value="">All leagues</option>
             {(filters.leagues || []).map(l => <option key={l} value={l}>{l.toUpperCase()}</option>)}
           </select>
@@ -81,11 +124,11 @@ export default function Filters({ filters, values, onChange }) {
           <label className={styles.label}>Position</label>
           <div className={styles.posGroup}>
             {POSITIONS.map(p => (
-              <button
-                key={p.value}
-                type="button"
-                title={p.title}
-                className={`${styles.posBtn} ${values.position === p.value ? styles.posBtnActive : ''}`}
+              <button 
+                key={p.value} 
+                type="button" 
+                title={p.title} 
+                className={`${styles.posBtn} ${values.position === p.value ? styles.posBtnActive : ''}`} 
                 onClick={() => onChange({ ...values, position: values.position === p.value ? '' : p.value, page: 0 })}
               >
                 {p.label}
@@ -99,27 +142,28 @@ export default function Filters({ filters, values, onChange }) {
           <label className={styles.label}>Search player or team</label>
           <div className={styles.searchWrap}>
             <span className={styles.searchIcon}>⌕</span>
-            <input
-              className={styles.input}
-              type="text"
-              placeholder="Name or team…"
-              value={values.search}
-              onChange={set('search')}
-            />
+            <input className={styles.input} type="text" placeholder="Name or team…" value={values.search || ''} onChange={set('search')} />
             {values.search && (
-              <button className={styles.inputClear} onClick={() => onChange({ ...values, search: '', page: 0 })}>✕</button>
+              <button type="button" className={styles.inputClear} onClick={() => onChange({ ...values, search: '', page: 0 })}>✕</button>
             )}
           </div>
         </div>
 
         {/* Clear all */}
-        <button
-          className={`${styles.reset} ${hasFilters ? styles.resetActive : ''}`}
+        <button 
+          type="button"
+          className={`${styles.reset} ${hasFilters ? styles.resetActive : ''}`} 
           onClick={() => onChange({
-            birthYearFrom: '', birthYearTo: '', season: '', league: '',
-            position: '', search: '', page: 0,
-            sortBy: values.sortBy, sortDir: values.sortDir,
-          })}
+            birthYearFrom: '',
+            birthYearTo: '',
+            season: '',
+            league: '',
+            position: '',
+            search: '',
+            page: 0,
+            sortBy: values.sortBy,
+            sortDir: values.sortDir,
+          })} 
           disabled={!hasFilters}
         >
           Clear all
@@ -127,13 +171,13 @@ export default function Filters({ filters, values, onChange }) {
       </div>
 
       {/* Active filter chips */}
-      {activeChips.length > 0 && (
+      {hasFilters && (
         <div className={styles.chips}>
           <span className={styles.chipsLabel}>Active:</span>
           {activeChips.map(chip => (
             <span key={chip.key} className={styles.chip}>
               {chip.label}
-              <button className={styles.chipX} onClick={chip.clear}>✕</button>
+              <button type="button" className={styles.chipX} onClick={() => handleClearChip(chip.type)}>✕</button>
             </span>
           ))}
         </div>

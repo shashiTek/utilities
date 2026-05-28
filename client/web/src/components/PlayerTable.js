@@ -164,7 +164,7 @@ function computeMaxes(data, statCols) {
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export default function PlayerTable({
-  data, loading, total, page, pageSize, onSort, sortBy, sortDir, onPage,
+  data = [], loading, total, page, pageSize, onSort, sortBy, sortDir, onPage,
   currentPositionFilter = 'ALL', onPlayerClick,
   birthYearFrom, birthYearTo, season, league, position, search,
 }) {

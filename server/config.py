@@ -15,36 +15,86 @@ from dotenv import load_dotenv
 
 # Load .env from the shared utilities root
 _ROOT = Path(__file__).resolve().parents[2]
-print(f"Loading environment variables from: {_ROOT / '.env'}")
-load_dotenv(_ROOT /".env",override=True)
+_ENV_PATH = _ROOT / '.env'
+print(f"Loading environment variables from: {_ENV_PATH}")
+load_dotenv(_ENV_PATH, override=True)
+
+
+def _get_required_str(key: str) -> str:
+    """Get a required string environment variable or raise an error."""
+    value = os.getenv(key)
+    if value is None:
+        raise ValueError(f"Missing required environment variable: {key}")
+    return value
+
+
+def _get_required_int(key: str) -> int:
+    """Get a required integer environment variable or raise an error."""
+    value = os.getenv(key)
+    if value is None:
+        raise ValueError(f"Missing required environment variable: {key}")
+    try:
+        return int(value)
+    except ValueError as e:
+        raise ValueError(f"Invalid integer value for {key}: {value}") from e
+
+
+def _get_required_float(key: str) -> float:
+    """Get a required float environment variable or raise an error."""
+    value = os.getenv(key)
+    if value is None:
+        raise ValueError(f"Missing required environment variable: {key}")
+    try:
+        return float(value)
+    except ValueError as e:
+        raise ValueError(f"Invalid float value for {key}: {value}") from e
+
+
+def _get_optional_str(key: str) -> str | None:
+    """Get an optional string environment variable."""
+    return os.getenv(key)
+
+
+def _get_optional_int(key: str, default: int = None) -> int:
+    """Get an optional integer environment variable with a default."""
+    value = os.getenv(key)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError as e:
+        raise ValueError(f"Invalid integer value for {key}: {value}") from e
 
 
 @dataclass(frozen=True)
 class Config:
     # --- MongoDB ---
-    mongo_uri: str    = field(default_factory=lambda: os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
-    db_name:   str    = field(default_factory=lambda: os.getenv("DB_NAME",   "elite_prospects_db"))
+    mongo_uri: str    = field(default_factory=lambda: _get_required_str("MONGO_URI"))
+    db_name:   str    = field(default_factory=lambda: _get_required_str("DB_NAME"))
 
     # --- Collection names ---
-    league_members_collection: str = field(default_factory=lambda: os.getenv("LEAGUE_MEMBERS_COLLECTION", "league_members"))
-    teams_collection:          str = field(default_factory=lambda: os.getenv("TEAMS_COLLECTION",          "teams"))
-    players_collection:        str = field(default_factory=lambda: os.getenv("PLAYERS_COLLECTION",        "players"))
-    stats_collection:          str = field(default_factory=lambda: os.getenv("STATS_COLLECTION",          "stats"))
+    league_members_collection: str = field(default_factory=lambda: _get_required_str("LEAGUE_MEMBERS_COLLECTION"))
+    teams_collection:          str = field(default_factory=lambda: _get_required_str("TEAMS_COLLECTION"))
+    players_collection:        str = field(default_factory=lambda: _get_required_str("PLAYERS_COLLECTION"))
+    stats_collection:          str = field(default_factory=lambda: _get_required_str("STATS_COLLECTION"))
 
     # --- Scraper targets ---
-    ep_league_slug: str = field(default_factory=lambda: os.getenv("EP_LEAGUE_SLUG", "ushs-prep"))
-    ep_target_year: int = field(default_factory=lambda: int(os.getenv("EP_TARGET_YEAR", "2025")))
-
+    ep_league_slug: str = field(default_factory=lambda: _get_required_str("EP_LEAGUE_SLUG"))
+    ep_target_year: int = field(default_factory=lambda: _get_required_int("EP_TARGET_YEAR"))
+    
+    # --- Recruitment analysis ---
+    aging_out_years_threshold: int = field(default_factory=lambda: _get_optional_int("AGING_OUT_YEARS_THRESHOLD", 3))
+    
     # --- HTTP behaviour ---
-    scrape_delay_min:    float = field(default_factory=lambda: float(os.getenv("SCRAPE_DELAY_MIN",    "1.5")))
-    scrape_delay_max:    float = field(default_factory=lambda: float(os.getenv("SCRAPE_DELAY_MAX",    "3.0")))
-    rate_limit_backoff:  int   = field(default_factory=lambda: int(os.getenv("RATE_LIMIT_BACKOFF",   "60")))
-    max_retries:         int   = field(default_factory=lambda: int(os.getenv("MAX_RETRIES",          "3")))
-    request_timeout:     int   = field(default_factory=lambda: int(os.getenv("REQUEST_TIMEOUT",      "30")))
+    scrape_delay_min:    float = field(default_factory=lambda: _get_required_float("SCRAPE_DELAY_MIN"))
+    scrape_delay_max:    float = field(default_factory=lambda: _get_required_float("SCRAPE_DELAY_MAX"))
+    rate_limit_backoff:  int   = field(default_factory=lambda: _get_required_int("RATE_LIMIT_BACKOFF"))
+    max_retries:         int   = field(default_factory=lambda: _get_required_int("MAX_RETRIES"))
+    request_timeout:     int   = field(default_factory=lambda: _get_required_int("REQUEST_TIMEOUT"))
 
     # --- Logging ---
-    log_level: str      = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
-    log_file:  str|None = field(default_factory=lambda: os.getenv("LOG_FILE") or None)
+    log_level: str      = field(default_factory=lambda: _get_required_str("LOG_LEVEL"))
+    log_file:  str|None = field(default_factory=lambda: _get_optional_str("LOG_FILE"))
 
     # --- Derived / constants ---
     ep_base_url: str = "https://www.eliteprospects.com"

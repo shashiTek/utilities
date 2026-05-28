@@ -12,7 +12,7 @@ import time
 
 import requests
 
-from server.config import settings
+from common.config import settings
 from server.utils.logger import get_logger
 
 log = get_logger(__name__)

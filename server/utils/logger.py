@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def get_logger(name: str) -> logging.Logger:
-    from server.config import settings  # lazy import avoids circular
+    from common.config import settings  # lazy import avoids circular
 
     logger = logging.getLogger(name)
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from server.config import settings
+from common.config import settings
 from server.db.mongo import MongoRepository
 from server.utils.http import HttpClient
 from server.utils.logger import get_logger

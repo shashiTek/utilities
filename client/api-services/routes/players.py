@@ -701,3 +701,550 @@ def get_filters():
         })
     except PyMongoError as e:
         return jsonify({"error": str(e)}), 500
+    
+def get_departing_players_pipeline(birth_years=None, max_year=None):
+    """
+    Generates the aggregation pipeline linking players and teams.
+
+    Args:
+        birth_years: list of specific years e.g. [2007, 2008]  — takes priority
+        max_year:    upper bound e.g. 2008  — used when no specific years given
+                     defaults to 2007 if neither param is provided
+    """
+
+    # ── Build the birth-year $match expression ───────────────────────────────
+    if birth_years and len(birth_years) > 0:
+        # Exact multi-year match: year IN [2006, 2007, 2008]
+        year_match = {
+            "$expr": {
+                "$in": [
+                    {
+                        "$convert": {
+                            "input": {"$substrCP": ["$birthDate", 0, 4]},
+                            "to": "int",
+                            "onError": 9999,
+                            "onNull": 9999
+                        }
+                    },
+                    birth_years
+                ]
+            }
+        }
+    else:
+        # Range match: year <= max_year (default 2007)
+        cutoff = max_year if max_year is not None else 2007
+        year_match = {
+            "$expr": {
+                "$lte": [
+                    {
+                        "$convert": {
+                            "input": {"$substrCP": ["$birthDate", 0, 4]},
+                            "to": "int",
+                            "onError": 9999,
+                            "onNull": 9999
+                        }
+                    },
+                    cutoff
+                ]
+            }
+        }
+
+    return [
+        # 1. Filter out missing or corrupt birth dates up front
+        {
+            "$match": {
+                "birthDate": {"$ne": None, "$not": {"$type": "string", "$eq": ""}}
+            }
+        },
+        # 2. Dynamic birth year filter
+        {"$match": year_match},
+        # 3. Join players collection with the teams collection
+        {
+            "$lookup": {
+                "from": "teams",
+                "localField": "source_team_id",
+                "foreignField": "_id",
+                "as": "teamDetails"
+            }
+        },
+        # 4. Flatten the team details array
+        {"$unwind": "$teamDetails"},
+        # 5. Restrict strictly to USHS-Prep league and Ice Hockey
+        {
+            "$match": {
+                "teamDetails.sport": "Ice Hockey",
+                "$or": [
+                    {"teamDetails.memberOf.name": "USHS-Prep"},
+                    {"teamDetails.memberOf.id": "USHS-Prep"},
+                    {"teamDetails.memberOf": {"$regex": "USHS-Prep", "$options": "i"}}
+                ]
+            }
+        },
+        # 6. Group by school and compile metrics/lists
+        {
+            "$group": {
+                "_id": "$source_team_id",
+                "schoolName": {"$first": "$teamDetails.name"},
+                "schoolLogo": {"$first": "$teamDetails.image"},
+                "coachingStaff": {"$first": "$teamDetails.coach"},
+                "eliteProspectsTeamUrl": {"$first": "$teamDetails.mainEntityOfPage"},
+                "departingPlayersCount": {"$sum": 1},
+                "leavingPlayersList": {
+                    "$push": {
+                        "name": "$name",
+                        "birthDate": "$birthDate",
+                        "url": "$url"
+                    }
+                }
+            }
+        },
+        # 7. Discard teams with unrealistic numbers (> 15 departures)
+        {
+            "$match": {
+                "departingPlayersCount": {"$lte": 15}
+            }
+        },
+        # 8. Sort by schools with the highest vacancies first
+        {"$sort": {"departingPlayersCount": -1}}
+    ]
+
+
+@players_bp.route('/api/recruitment/vacancies', methods=['GET'])
+def get_vacancies():
+    """
+    API Endpoint returning USHS-Prep schools losing players.
+
+    Query params:
+        birthYears  comma-separated list of exact years e.g. ?birthYears=2007,2008
+        maxYear     upper-bound year              e.g. ?maxYear=2008
+        (if neither provided, defaults to maxYear=2007)
+
+    Examples:
+        /api/recruitment/vacancies                       → born <= 2007
+        /api/recruitment/vacancies?maxYear=2008          → born <= 2008
+        /api/recruitment/vacancies?birthYears=2007,2008  → born exactly 2007 or 2008
+        /api/recruitment/vacancies?birthYears=2006       → born exactly 2006 only
+    """
+    try:
+        # Parse birthYears param — comma-separated string → list of ints
+        birth_years_raw = request.args.get("birthYears", "").strip()
+        birth_years = []
+        if birth_years_raw:
+            try:
+                birth_years = [int(y.strip()) for y in birth_years_raw.split(",") if y.strip()]
+            except ValueError:
+                return jsonify({"status": "error", "message": "birthYears must be comma-separated integers"}), 400
+
+        # Parse maxYear param
+        max_year = None
+        max_year_raw = request.args.get("maxYear", "").strip()
+        if max_year_raw:
+            try:
+                max_year = int(max_year_raw)
+            except ValueError:
+                return jsonify({"status": "error", "message": "maxYear must be an integer"}), 400
+
+        pipeline = get_departing_players_pipeline(
+            birth_years=birth_years if birth_years else None,
+            max_year=max_year
+        )
+        results = list(db.players.aggregate(pipeline))
+
+        for record in results:
+            record["_id"] = str(record["_id"])
+
+        return jsonify({
+            "status": "success",
+            "count": len(results),
+            "birthYears": birth_years or None,
+            "maxYear": max_year,
+            "data": results
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# GET /api/schools/recruiting
+# ---------------------------------------------------------------------------
+# Find schools actively recruiting specific birth year cohort
+# Query params:
+#   birthYear      — integer e.g. 2011 (target birth year to recruit, REQUIRED)
+#   season         — optional, e.g. "2025-2026" (default: all seasons)
+#   league         — optional, e.g. "ushs-prep" (filters schools by league)
+#   agingOutYears  — optional, default from config (AGING_OUT_YEARS_THRESHOLD env var, default 3)
+#                    minimum age for aging out is 18 years old
+#
+# Returns: Array of schools with player composition analysis
+# {
+#   team: "School Name",
+#   league: "ushs-prep",
+#   season: "2025-2026",
+#   players_target_cohort: 5,          # Count of target birth year players (2011-born)
+#   players_aging_out: 12,             # Count of 18+ year old players (born 2008 or earlier in 2026)
+#   players_future_talent: 3,          # Count of younger players
+#   total_players: 20,
+#   forwards/defensemen/goalies: {...},
+#   aging_out_percentage: 60.0,
+#   recruitment_priority: "HIGH"       # Based on aging_out % (>40% HIGH, >20% MEDIUM, else LOW)
+# }
+# ---------------------------------------------------------------------------
+from datetime import datetime
+from flask import Blueprint, request, jsonify, current_app
+
+# Assuming db and jsonify_mongo are imported/defined elsewhere in your project
+# from your_app.extensions import db, jsonify_mongo 
+
+@players_bp.route("/api/schools/recruiting")
+def find_recruiting_schools():
+    try:
+        birth_year = request.args.get("birthYear")
+        season = request.args.get("season")
+        league = request.args.get("league")
+        aging_out_years_str = request.args.get("agingOutYears")
+        
+        # Dynamically get current year and apply prep school age limit (18)
+        current_year = datetime.now().year
+        max_age_limit = 18
+
+        if not birth_year:
+            return jsonify({"error": "birthYear parameter required"}), 400
+
+        try:
+            target_year = int(birth_year)
+        except ValueError:
+            return jsonify({"error": f"Invalid birthYear: {birth_year}"}), 400
+
+        # Get aging out years threshold from query param or config (default: 3)
+        aging_out_years = 3  # Default fallback
+        try:
+            if aging_out_years_str:
+                aging_out_years = int(aging_out_years_str)
+            else:
+                try:
+                    from common.config import Config
+                    aging_out_years = Config().aging_out_years_threshold
+                except (ImportError, Exception):
+                    pass  # Use default of 3
+        except (ValueError, TypeError):
+            pass  # Use default of 3
+        
+        # Calculate the dynamic aging-out birth year cutoff formula
+        aging_out_birth_year_cutoff = current_year - max(aging_out_years, max_age_limit)
+        print(f"Calculated aging out cutoff birth year: {aging_out_birth_year_cutoff} (current_year={current_year}, max_age_limit={max_age_limit}, aging_out_years={aging_out_years})")
+        
+        stats_collection = db["stats"]
+
+        # Build initial match filter
+        match_filter = {}
+        if season:
+            match_filter["season"] = season
+        if league:
+            match_filter["league"] = league
+
+        pipeline = [
+            # 1. Filter stats by season/league if provided
+            {"$match": match_filter} if match_filter else {"$match": {}},
+            
+            # 2. Join with players collection to fetch bio data
+            {
+                "$lookup": {
+                    "from": "players",
+                    "localField": "player_url",
+                    "foreignField": "url",
+                    "as": "bio"
+                }
+            },
+            {"$unwind": {"path": "$bio", "preserveNullAndEmptyArrays": True}},
+            
+            # 3. Parse birth year safely from the date string
+            {
+                "$addFields": {
+                    "birthYearRaw": {
+                        "$toInt": {
+                            "$substr": [
+                                {"$ifNull": ["$bio.birthDate", "0000-00-00"]}, 0, 4
+                            ]
+                        }
+                    },
+                    "playerPosition": {
+                        "$toUpper": {"$ifNull": ["$position", ""]}
+                    }
+                }
+            },
+            
+            # 4. Group by school and compute player metrics
+            {
+                "$group": {
+                    "_id": {
+                        "team": "$team",
+                        "league": "$league",
+                        "season": "$season"
+                    },
+                    "target_cohort": {
+                        "$sum": {"$cond": [{"$eq": ["$birthYearRaw", target_year]}, 1, 0]}
+                    },
+                    "aging_out": {
+                        "$sum": {"$cond": [
+                            {"$and": [
+                                {"$lte": ["$birthYearRaw", aging_out_birth_year_cutoff]},
+                                {"$gt": ["$birthYearRaw", 1900]} # Skips corrupted/empty '0000' records
+                            ]}, 
+                            1, 0
+                        ]}
+                    },
+                    "future_talent": {
+                        "$sum": {"$cond": [{"$gt": ["$birthYearRaw", target_year]}, 1, 0]}
+                    },
+                    "total_players": {"$sum": 1},
+                    "forwards": {
+                        "$sum": {"$cond": [{"$in": ["$playerPosition", ["F", "LW", "RW", "C"]]}, 1, 0]}
+                    },
+                    "defensemen": {
+                        "$sum": {"$cond": [{"$in": ["$playerPosition", ["D"]]}, 1, 0]}
+                    },
+                    "goalies": {
+                        "$sum": {"$cond": [{"$in": ["$playerPosition", ["G", "GK"]]}, 1, 0]}
+                    }
+                }
+            },
+            
+            # 5. Filter for schools that have active target cohort players
+            {
+                "$match": {"target_cohort": {"$gt": 0}}
+            },
+            
+            # 6. Calculate relative dynamic recruitment priorities
+            {
+                "$addFields": {
+                    "aging_out_percentage": {
+                        "$cond": [
+                            {"$eq": ["$total_players", 0]},
+                            0,
+                            {"$multiply": [
+                                {"$divide": ["$aging_out", "$total_players"]},
+                                100
+                            ]}
+                        ]
+                    },
+                    "recruitment_priority": {
+                        "$cond": [
+                            {"$gte": [
+                                {"$divide": ["$aging_out", {"$max": ["$total_players", 1]}]},
+                                0.4
+                            ]},
+                            "HIGH",
+                            {"$cond": [
+                                {"$gte": [
+                                    {"$divide": ["$aging_out", {"$max": ["$total_players", 1]}]},
+                                    0.2
+                                ]},
+                                "MEDIUM",
+                                "LOW"
+                            ]}
+                        ]
+                    }
+                }
+            },
+            
+            # 7. FIX: Exclude schools where aging_out equals total_players (100% aging out)
+            {
+                "$match": {
+                    "aging_out_percentage": {"$lte": 80}
+                }
+            },
+            
+            # 8. Sort by schools losing the most players first
+            {"$sort": {"aging_out": -1, "target_cohort": -1}},
+            
+            # 9. Shape output structure
+            {
+                "$project": {
+                    "_id": 0,
+                    "team": "$_id.team",
+                    "league": "$_id.league",
+                    "season": "$_id.season",
+                    "players_target_cohort": "$target_cohort",
+                    "players_aging_out": "$aging_out",
+                    "players_future_talent": "$future_talent",
+                    "total_players": 1,
+                    "forwards": 1,
+                    "defensemen": 1,
+                    "goalies": 1,
+                    "aging_out_percentage": {"$round": ["$aging_out_percentage", 1]},
+                    "recruitment_priority": 1
+                }
+            }
+        ]
+
+        results = list(stats_collection.aggregate(pipeline))
+
+        return jsonify_mongo(current_app, {
+            "target_birth_year": target_year,
+            "aging_out_cutoff_year": aging_out_birth_year_cutoff,
+            "current_system_year": current_year,
+            "filters": {
+                "season": season or "all",
+                "league": league or "all"
+            },
+            "schools": results,
+            "total_schools": len(results)
+        })
+
+    except Exception as e:
+        print(f"Error in find_recruiting_schools: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+
+# ---------------------------------------------------------------------------
+# GET /api/schools/recruiting/aging-out-players
+# ---------------------------------------------------------------------------
+# Get detailed list of 18+ year old players (aging out) from a specific school
+# Query params:
+#   school (required) — school/team name
+#   season (optional) — filter by season
+#   league (optional) — filter by league
+#   agingOutYears (optional) — years threshold (default from config, minimum age is always 18)
+#
+# Returns: List of aging out players (18+) with their details
+# ---------------------------------------------------------------------------
+@players_bp.route("/api/schools/recruiting/aging-out-players")
+def get_aging_out_players():
+    try:
+        school_name = request.args.get("school")
+        season = request.args.get("season")
+        league = request.args.get("league")
+        aging_out_years_str = request.args.get("agingOutYears")
+
+        if not school_name:
+            return jsonify({"error": "school parameter required"}), 400
+
+        # Get aging out years threshold (default: 3)
+        aging_out_years = 3
+        try:
+            if aging_out_years_str:
+                aging_out_years = int(aging_out_years_str)
+            else:
+                try:
+                    from common.config import Config
+                    aging_out_years = Config().aging_out_years_threshold
+                except (ImportError, Exception):
+                    pass
+        except (ValueError, TypeError):
+            pass
+
+        stats_collection = db["stats"]
+
+        # Calculate cutoff: Aging out must be 18+ years old
+        current_year = 2026
+        min_age_for_aging_out = 18
+        target_year_cutoff = current_year - max(aging_out_years, min_age_for_aging_out)
+
+        # Build match filter
+        match_filter = {
+            "team": school_name
+        }
+        if season:
+            match_filter["season"] = season
+        if league:
+            match_filter["league"] = league
+
+        current_year = 2026  # Current year
+        # Aging out must be 18+ years old
+        # If aging_out_years is set, use it, but ensure minimum of 18 years old
+        min_age_for_aging_out = 18
+        target_year_cutoff = current_year - max(aging_out_years, min_age_for_aging_out)
+       
+        pipeline = [
+            {"$match": match_filter},
+            {
+                "$lookup": {
+                    "from": "players",
+                    "localField": "player_url",
+                    "foreignField": "url",
+                    "as": "bio"
+                }
+            },
+            {"$unwind": {"path": "$bio", "preserveNullAndEmptyArrays": True}},
+            {
+                "$addFields": {
+                    "birthYearRaw": {
+                        "$cond": {
+                            "if": {"$ifNull": ["$bio.birthDate", None]},
+                            "then": {
+                                "$year": {
+                                    "$dateFromString": {
+                                        "dateString": "$bio.birthDate",
+                                        "onError": None
+                                    }
+                                }
+                            },
+                            "else": None
+                        }
+                    }
+                }
+            },
+            {
+                "$match": {
+                    "birthYearRaw": {"$lte": target_year_cutoff}
+                }
+            },
+            {
+                "$project": {
+                    "player_name": 1,
+                    "player_url": 1,
+                    "playerPosition": 1,
+                    "birthYearRaw": 1,
+                    "season": 1,
+                    "league": 1,
+                    "team": 1,
+                    "stats": 1
+                }
+            },
+            {
+                "$sort": {"birthYearRaw": 1}  # Oldest first
+            }
+        ]
+
+        players = list(stats_collection.aggregate(pipeline))
+
+        # Format response
+        formatted_players = []
+        for p in players:
+            stats_obj = p.get("stats") or {}
+            gp = stats_obj.get("GP") or stats_obj.get("gp") or 0
+            g = stats_obj.get("G") or stats_obj.get("g") or 0
+            a_count = stats_obj.get("A") or stats_obj.get("a") or 0
+            pts = stats_obj.get("PTS") or stats_obj.get("pts") or 0
+            
+            if pts == 0 and (g > 0 or a_count > 0):
+                pts = g + a_count
+
+            formatted_players.append({
+                "name": p.get("player_name", "—"),
+                "url": p.get("player_url", ""),
+                "position": (p.get("playerPosition") or "—").upper(),
+                "birth_year": p.get("birthYearRaw") or "—",
+                "age": (2026 - p.get("birthYearRaw")) if p.get("birthYearRaw") else "—",
+                "season": p.get("season", "—"),
+                "stats": {
+                    "GP": gp,
+                    "G": g,
+                    "A": a_count,
+                    "PTS": pts
+                }
+            })
+
+        return jsonify_mongo(current_app, {
+            "school": school_name,
+            "aging_out_years": aging_out_years,
+            "player_count": len(formatted_players),
+            "players": formatted_players
+        })
+
+    except Exception as e:
+        print(f"Error in get_aging_out_players: {e}")
+        return jsonify({"error": str(e)}), 500
+

@@ -775,7 +775,101 @@ def get_teams_roster():
         print(f"Error fetching populated team roster data splits: {str(e)}")
         return jsonify({"data": [], "total": 0, "query": "db.teams.find({})", "error": str(e)}), 500
 
+def get_departing_players_pipeline():
+    """Generates the aggregation pipeline linking players and teams."""
+    return [
+        # 1. Filter out missing or corrupt birth dates up front
+        {
+            "$match": {
+                "birthDate": {"$ne": None, "$not": {"$type": "string", "$eq": ""}}
+            }
+        },
+        # 2. Match players born in 2008 or earlier (Older than 2009 / turning 18+ in 2026)
+        {
+            "$match": {
+                "$expr": {
+                    "$lte": [
+                        {
+                            "$convert": {
+                                "input": {"$substrCP": ["$birthDate", 0, 4]},
+                                "to": "int",
+                                "onError": 9999,
+                                "onNull": 9999
+                            }
+                        },
+                        2008
+                    ]
+                }
+            }
+        },
+        # 3. Join players collection with the teams collection
+        {
+            "$lookup": {
+                "from": "teams",
+                "localField": "source_team_id",
+                "foreignField": "_id",
+                "as": "teamDetails"
+            }
+        },
+        # 4. Flatten the team details array
+        {"$unwind": "$teamDetails"},
+        # 5. Restrict strictly to USHS-Prep league and Ice Hockey
+        {
+            "$match": {
+                "teamDetails.sport": "Ice Hockey",
+                "$or": [
+                    {"teamDetails.memberOf.name": "USHS-Prep"},
+                    {"teamDetails.memberOf.id": "USHS-Prep"},
+                    {"teamDetails.memberOf": {"$regex": "USHS-Prep", "$options": "i"}}
+                ]
+            }
+        },
+        # 6. Group by school and compile metrics/lists
+        {
+            "$group": {
+                "_id": "$source_team_id",
+                "schoolName": {"$first": "$teamDetails.name"},
+                "schoolLogo": {"$first": "$teamDetails.image"},
+                "eliteProspectsTeamUrl": {"$first": "$teamDetails.mainEntityOfPage"},
+                "departingPlayersCount": {"$sum": 1},
+                "leavingPlayersList": {
+                    "$push": {
+                        "name": "$name",
+                        "birthDate": "$birthDate",
+                        "url": "$url"
+                    }
+                }
+            }
+        },
+        # 7. Sort by schools with the highest vacancies first
+        {"$sort": {"departingPlayersCount": -1}}
+    ]
 
+@app.route('/api/recruitment/vacancies', methods=['GET'])
+def get_vacancies():
+    """
+    API Endpoint returning USHS-Prep schools losing players born 2008 or earlier.
+    Ideal for targeting incoming 2011 cohort recruitment.
+    """
+    try:
+        pipeline = get_departing_players_pipeline()
+        results = list(db.players.aggregate(pipeline))
+        
+        # Serialize MongoDB ObjectIds to strings so Flask can return valid JSON
+        for record in results:
+            record["_id"] = str(record["_id"])
+            
+        return jsonify({
+            "status": "success",
+            "count": len(results),
+            "data": results
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
 # ---------------------------------------------------------------------------

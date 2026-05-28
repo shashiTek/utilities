@@ -15,7 +15,7 @@ import json
 
 from bs4 import BeautifulSoup
 
-from server.config import settings
+from common.config import settings
 from server.db.mongo import MongoRepository
 from server.scrapers.base import BaseScraper
 

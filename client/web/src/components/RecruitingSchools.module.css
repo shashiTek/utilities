@@ -1,0 +1,365 @@
+.container {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 32px;
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: #1a1a1a;
+}
+
+.subtitle {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Filters */
+.filtersPanel {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.filterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.filterGroup label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.input,
+.select {
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  font-family: inherit;
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+.refreshBtn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  background: #1976d2;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background: #1565c0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Error & Loading */
+.error {
+  padding: 12px 16px;
+  background: #ffebee;
+  color: #c62828;
+  border-radius: 4px;
+  border-left: 4px solid #c62828;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.loading {
+  text-align: center;
+  color: #666;
+  padding: 40px 20px;
+  font-size: 16px;
+}
+
+.noResults {
+  text-align: center;
+  color: #999;
+  padding: 40px 20px;
+  font-size: 16px;
+}
+
+/* Results */
+.resultsPanel {
+  margin-top: 24px;
+}
+
+.resultCount {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+.resultCount strong {
+  color: #1976d2;
+  font-weight: 600;
+}
+
+/* Schools List */
+.schoolsList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+/* School Card */
+.schoolCard {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s;
+}
+
+.schoolCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #1976d2;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.schoolInfo {
+  flex: 1;
+}
+
+.schoolName {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: #1a1a1a;
+}
+
+.badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.league,
+.season {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.league {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.season {
+  background: #f3e5f5;
+  color: #6a1b9a;
+}
+
+.priority {
+  text-align: right;
+}
+
+.priorityBadge {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.priorityText {
+  display: block;
+  font-size: 11px;
+  color: #666;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Stats Grid */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.statBox {
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  border-left: 3px solid #e0e0e0;
+}
+
+.statBox:nth-child(1) {
+  border-left-color: #1976d2;
+}
+
+.statBox:nth-child(2) {
+  border-left-color: #d32f2f;
+}
+
+.statBox:nth-child(3) {
+  border-left-color: #388e3c;
+}
+
+.statBox:nth-child(4) {
+  border-left-color: #999;
+}
+
+.statLabel {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.statValue {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* Position Mix */
+.positionMix {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.positionItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.positionLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #666;
+  min-width: 16px;
+}
+
+.positionCount {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1976d2;
+  padding: 4px 8px;
+  background: white;
+  border-radius: 4px;
+  display: inline-block;
+  min-width: 32px;
+  text-align: center;
+}
+
+/* Card Footer */
+.cardFooter {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.insight {
+  color: #666;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.viewPlayersBtn {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  background: #1976d2;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.viewPlayersBtn:hover {
+  background: #1565c0;
+  transform: translateX(2px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .schoolsList {
+    grid-template-columns: 1fr;
+  }
+
+  .filtersPanel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filterGroup {
+    min-width: unset;
+  }
+
+  .refreshBtn {
+    width: 100%;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

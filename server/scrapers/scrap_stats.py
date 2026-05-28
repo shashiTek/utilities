@@ -1,5 +1,5 @@
 from server.db.mongo import MongoRepository
-from server.config import settings
+from common.config import settings
 
 # Temporary cleanup task execution
 class StatsRepository(MongoRepository):

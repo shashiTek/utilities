@@ -6,6 +6,8 @@ import PlayerCompare from './components/PlayerCompare';
 import QueryDisplay from './components/QueryDisplay';
 import TeamView from './components/TeamView';
 import LeaguesView from './components/LeaguesView';
+import VacanciesPage from './components/VacanciesPage';
+import RecruitingSchools from './components/RecruitingSchools';
 import PlayerProfileDrawer from './components/PlayerProfileDrawer';
 import useDebounce from './hooks/useDebounce';
 import { fetchFilters, fetchPlayers, fetchTeamFilters, fetchTeams } from './api';
@@ -29,6 +31,8 @@ const NAV = [
   { id: 'players',   label: 'Players',   icon: '◇' },
   { id: 'teams',     label: 'Teams',     icon: '◉' },
   { id: 'leagues',   label: 'Leagues',   icon: '◎' },
+  { id: 'recruiting', label: 'Recruiting', icon: '⊙' },
+  { id: 'vacancies', label: 'Vacancies', icon: '◍' },
 ];
 
 export default function App() {
@@ -109,6 +113,7 @@ export default function App() {
           sortDir:       playerFilters.sortDir,
         });
         if (res) {
+          
           setPlayers(res);
           if (res.metrics) setMetrics(res.metrics);
         }
@@ -207,6 +212,12 @@ export default function App() {
 
       case 'leagues':
         return <LeaguesView />;
+      
+      case 'recruiting':
+        return <RecruitingSchools />;
+
+      case 'vacancies': 
+        return <VacanciesPage />
 
       default:
         return null;

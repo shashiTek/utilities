@@ -22,6 +22,18 @@ export const fetchPlayer = (id) => get(`/api/player/${id}`);
 export const fetchTeamRosterOrigins = (league, season) =>
   get('/api/league/team-roster-origins', { league, season });
 
+export const fetchRecruitingSchools = (birthYear, season, league, agingOutYears) => {
+  const params = { birthYear, season, league };
+  if (agingOutYears !== undefined) params.agingOutYears = agingOutYears;
+  return get('/api/schools/recruiting', params);
+};
+
+export const fetchAgingOutPlayers = (school, season, league, agingOutYears) => {
+  const params = { school, season, league };
+  if (agingOutYears !== undefined) params.agingOutYears = agingOutYears;
+  return get('/api/schools/recruiting/aging-out-players', params);
+};
+
 // ── Team Endpoints (Using the unified get helper) ──
 /**
  * Fetches dropdown data options for team view filtering matrix

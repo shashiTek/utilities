@@ -13,7 +13,7 @@ import time
 import random
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
-from server.config import settings
+from common.config import settings
 from server.db.mongo import MongoRepository
 from server.models.stats import GoalieStats, SkaterStats, StatRow
 from server.scrapers.base import BaseScraper
@@ -213,13 +213,13 @@ class StatsScraper(BaseScraper):
                     if norm_url in player_db_cache:
                         p_doc = player_db_cache[norm_url]
                         know_about = p_doc.get("knowsAbout")
-                        print(f"Player {athlete.get('name', 'Unknown')} has knowsAbout: {know_about}")
+                        #print(f"Player {athlete.get('name', 'Unknown')} has knowsAbout: {know_about}")
                         # FIX 1: Explicitly target index 1 to isolate position names
                         if isinstance(know_about, list) and len(know_about) > 1:
                             type_hint = know_about[1]
                             if type_hint == "Goalkeeper" or type_hint == "Goaltender":
                                 position_hint = "G"
-                                print(f"Identified goalie position for player {athlete.get('name', 'Unknown')}")
+                                #print(f"Identified goalie position for player {athlete.get('name', 'Unknown')}")
                             elif type_hint == "Defender":
                                 position_hint = "D"
                             elif type_hint == "Forward":
@@ -291,6 +291,7 @@ class StatsScraper(BaseScraper):
             base = f"{self.cfg.ep_base_url}/league/{league_slug}/stats/{season_slug}?page="
 
         self.log.info("  Fetching %s stats …", kind)
+        self.log.debug("  Base URL: %s", base) 
         upserted = 0
 
         for page_num in range(1, 99):

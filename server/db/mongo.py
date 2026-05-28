@@ -16,7 +16,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.errors import BulkWriteError, DuplicateKeyError, PyMongoError
 
-from server.config import settings
+from common.config import settings
 from server.utils.logger import get_logger
 
 log = get_logger(__name__)
